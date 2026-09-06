@@ -1,0 +1,25 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+build/
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+.kotlin/
+
+# Release signing — never commit the keystore or its credentials.
+*.jks
+*.keystore
+keystore.properties
+
+# Built APKs (e.g. StrComm-v1.0.apk staged at the repo root for a manual GitHub Release upload)
+# belong on the Releases page, not in git history.
+*.apk

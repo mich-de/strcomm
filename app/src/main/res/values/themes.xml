@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Dark instead of the Studio-template Light default: Compose paints a dark background the
+         instant its first frame lands, so a light window theme meant a white flash was visible
+         in the gap between the splash screen dismissing and that first frame. -->
+    <style name="Theme.StrComm" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/background_dark</item>
+        <item name="android:colorBackground">@color/background_dark</item>
+    </style>
+
+    <!-- installSplashScreen() (MainActivity) switches to Theme.StrComm right after super.onCreate() —
+         this theme only needs to look right for the brief cold-start window before that switch. -->
+    <style name="Theme.StrComm.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/background_dark</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_icon</item>
+        <item name="postSplashScreenTheme">@style/Theme.StrComm</item>
+    </style>
+</resources>
