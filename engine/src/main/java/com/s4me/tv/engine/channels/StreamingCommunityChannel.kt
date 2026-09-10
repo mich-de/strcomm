@@ -15,12 +15,13 @@ import com.s4me.tv.engine.Tmdb
 import com.s4me.tv.engine.youtubeVideoId
 import java.net.URLEncoder
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * streamingcommunityz.tax — a Laravel + Inertia.js (Vue) site: every page ships a JSON blob
+ * streamingcommunityz.taxi — a Laravel + Inertia.js (Vue) site: every page ships a JSON blob
  * (`data-page`) with the exact data it renders, and `/it/archive` and `/it/search` are plain
  * paginated JSON endpoints. No HTML-scraping needed for browsing at all. Playback goes through a
  * shared "vixcloud.co" backend: `/it/iframe/{id}-{slug}[?episode_id=N]` returns a small page whose
@@ -30,22 +31,36 @@ import org.json.JSONObject
  * .m3u8 for native ExoPlayer playback, falling back to the vixcloud embed page (loaded in a
  * WebView, see PlayerScreen) only if that resolution or the live manifest fetch fails.
  *
- * This TLD is not stable: the addon originally shipped against `.style`, which by 2026-09-01 was
- * 301-redirecting here to `.tax`. These aggregator sites rotate domains to dodge blocking — rather
- * than hardcode a value that goes stale again, [syncConfigFrom] reads the site's own self-reported
- * `app_url`/`cdn_url` (present in every Inertia page's `props`, right next to `version`) and keeps
- * [host]/[cdn] pointed at whatever domain actually served the response. [host]/[cdn] below are
- * only the seed for the very first request of a session — after that they self-update, so a future
- * TLD rotation needs no code change as long as the old domain keeps 301-redirecting to the new one
- * (which is exactly how these sites behave: they redirect to preserve their traffic, not vanish).
+ * This TLD is not stable: the addon originally shipped against `.style`, which 301-redirected to
+ * `.tax`, which in turn now redirects to `.taxi` ("usa anche ...z.taxi come fonti"). These
+ * aggregator sites rotate domains to dodge blocking — rather than hardcode a value that goes stale
+ * again, [syncConfigFrom] reads the site's own self-reported `app_url`/`cdn_url` (present in every
+ * Inertia page's `props`, right next to `version`) and keeps [host]/[cdn] pointed at whatever
+ * domain actually served the response. [hostSeeds] below are only the cold-start guesses for the
+ * very first request of a session, tried newest-first: [withColdStartFallback] walks them until one
+ * answers (so a dead primary domain no longer bricks the app even without a redirect), then the
+ * response's own props self-update [host]/[cdn] and every later request skips straight through.
  */
 class StreamingCommunityChannel : Channel {
   override val id = "streamingcommunity"
   override val displayName = "StreamingCommunity"
   override val category = ChannelCategory.MIXED
 
-  @Volatile private var host = "https://streamingcommunityz.tax"
-  @Volatile private var cdn = "https://cdn.streamingcommunityz.tax/images/"
+  @Volatile private var host = "https://streamingcommunityz.taxi"
+  @Volatile private var cdn = "https://cdn.streamingcommunityz.taxi/images/"
+
+  /**
+   * Cold-start seeds for [host], newest domain first. The site rotates its TLD, so these are only
+   * guesses: [withColdStartFallback] tries them in order on the first request of the session and
+   * adopts whichever one answers, after which [syncConfigFrom] pins the site's own reported domain
+   * from every response. `.taxi` is the live domain, `.tax` the prior one (still 301-ing here for
+   * now, but listed explicitly so it keeps working the day that redirect stops).
+   */
+  private val hostSeeds = listOf("https://streamingcommunityz.taxi", "https://streamingcommunityz.tax")
+
+  /** Flips true the first time any fetch succeeds — from then on [withColdStartFallback] is a
+   *  straight passthrough and the seed-walk never runs again this session. */
+  @Volatile private var hostConfirmed = false
 
   @Volatile private var inertiaVersion: String? = null
   @Volatile private var cachedGenres: List<GenreOption>? = null
@@ -276,6 +291,53 @@ class StreamingCommunityChannel : Channel {
     )
   }
 
+  /** "Altri capitoli della saga" — the movie's TMDB collection, each sibling resolved back to a
+   *  catalogue MOVIE. The link is TMDB's own `belongs_to_collection`, not a title-keyword guess
+   *  (that was the old, removed row); a sibling not on the source just drops out. */
+  override suspend fun collection(item: StreamItem): List<StreamItem> {
+    if (item.kind != ItemKind.MOVIE) return emptyList()
+    val tmdbId =
+      (item.tmdbId
+          ?: decodeRef(item.url)?.let { (titleId, slug) ->
+            fetchInertia("$host/it/titles/$titleId-$slug")
+              ?.optJSONObject("props")
+              ?.optJSONObject("title")
+              ?.let { optStringOrNull(it, "tmdb_id") }
+          })
+        ?.takeIf { it != "0" } ?: return emptyList()
+
+    val parts = Tmdb.collection(tmdbId)
+    if (parts.isEmpty()) return emptyList()
+    val selfId = item.url.substringBefore("|")
+    return coroutineScope {
+        parts.map { part ->
+          async {
+            runCatching {
+                val hits = search(part.title).filter { it.kind == ItemKind.MOVIE }
+                hits.firstOrNull { it.tmdbId != null && it.tmdbId == part.tmdbId }
+                  ?: hits.firstOrNull { looseTitleMatch(it.title, part.title) && (part.year == null || it.year == part.year) }
+                  ?: hits.firstOrNull { looseTitleMatch(it.title, part.title) }
+              }
+              .getOrNull()
+          }
+        }
+      }
+      .awaitAll()
+      .filterNotNull()
+      .distinctBy { it.url }
+      .filter { it.url.substringBefore("|") != selfId }
+  }
+
+  /** Punctuation/spacing-insensitive title equality-or-containment — TMDB's it-IT title and the
+   *  source's own title for the same film often differ only in dashes/colons ("Dune: Parte Due"
+   *  vs "Dune - Parte due"). */
+  private fun looseTitleMatch(a: String, b: String): Boolean {
+    fun norm(s: String) = s.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+    val na = norm(a)
+    val nb = norm(b)
+    return na.isNotEmpty() && nb.isNotEmpty() && (na == nb || na.contains(nb) || nb.contains(na))
+  }
+
   /** The site keeps a `trailers` array on the title props (TMDB-sourced, each entry a YouTube
    *  clip). Prefer one whose label marks it Italian; otherwise take the first. Tolerant of which
    *  key holds the id (`youtube_id` / `key` / a full URL) — [youtubeVideoId] normalises it, and a
@@ -378,7 +440,40 @@ class StreamingCommunityChannel : Channel {
 
   override suspend fun search(query: String): List<StreamItem> {
     val json = fetchJson("$host/it/search?q=${URLEncoder.encode(query, "UTF-8")}") ?: return emptyList()
-    return parseTitles(json.optJSONArray("data") ?: JSONArray())
+    return rankByRelevance(query, parseTitles(json.optJSONArray("data") ?: JSONArray()))
+  }
+
+  /**
+   * The site's search is a fuzzy STEM match: `q=matrix` returns the 4 real Matrix films and then
+   * ~55 "Matrimonio…"/"Matriarch"/"Matricola" titles sharing only the "matri" stem ("matrix ha
+   * dato un sacco di titoli"). Re-rank by how the query sits in the TITLE — exact, whole-word
+   * prefix, whole word, bare substring — and once any of those solid tiers has a hit, drop the
+   * long tail the site matched on a stem / plot / cast name instead of the title. Stable sort, so
+   * inside a tier the site's own ordering is kept. A query that hits no title at all (a person
+   * name like "Gal Gadot") lands entirely in the last tier and is returned untouched, which is
+   * what the person-search verification path downstream needs.
+   */
+  private fun rankByRelevance(query: String, items: List<StreamItem>): List<StreamItem> {
+    fun norm(s: String) = s.lowercase().replace(Regex("[^\\p{L}\\p{Nd}]+"), " ").trim()
+    val q = norm(query)
+    if (q.isEmpty() || items.isEmpty()) return items
+    val whole = Regex("(^| )${Regex.escape(q)}( |$)")
+    fun tier(title: String): Int {
+      val t = norm(title)
+      return when {
+        t == q -> 0
+        t.startsWith("$q ") -> 1
+        whole.containsMatchIn(t) -> 2
+        t.contains(q) -> 3
+        else -> 4
+      }
+    }
+    // A 1–3 char query ("it", "up") turns "substring of the title" into noise ("Spirit", "Legit"),
+    // so for those keep only exact / whole-word matches.
+    val keep = if (q.length <= 3) 2 else 3
+    val scored = items.map { it to tier(it.title) }
+    val solid = scored.any { it.second <= keep }
+    return scored.filter { !solid || it.second <= keep }.sortedBy { it.second }.map { it.first }
   }
 
   // --- shared helpers -----------------------------------------------------------------------
@@ -393,6 +488,10 @@ class StreamingCommunityChannel : Channel {
       val images = t.optJSONArray("images")
       val poster = findImage(images, "poster")
       val backdrop = findImage(images, "background")
+      // "cover" is the 16:9 card art the site's own rows use; "logo" is the transparent title
+      // treatment it overlays on that card — both feed :app's horizontal Home cards.
+      val cover = findImage(images, "cover")
+      val logo = findImage(images, "logo")
       val score = optStringOrNull(t, "score")
       StreamItem(
         title = t.optString("name", "?"),
@@ -401,6 +500,8 @@ class StreamingCommunityChannel : Channel {
         channelId = id,
         thumbnail = poster?.let { cdn + it },
         backdrop = backdrop?.let { cdn + it },
+        cover = cover?.let { cdn + it },
+        logo = logo?.let { cdn + it },
         // Prefer the Italy-specific air date (`last_air_date_it`) over the generic one — the site
         // tracks them separately (imported/dubbed content can air later in Italy than originally),
         // and this is an Italian-language app for an Italian audience. Falls back to the generic
@@ -410,6 +511,9 @@ class StreamingCommunityChannel : Channel {
             ?.take(4)
             ?.takeIf { it.length == 4 },
         quality = score?.takeIf { it != "0" }?.let { "★ $it" },
+        // Present on some list endpoints, absent on others — when it's here it lets a caller match
+        // a title exactly (e.g. resolving a TMDB collection sibling) instead of by fuzzy name.
+        tmdbId = optStringOrNull(t, "tmdb_id")?.takeIf { it != "0" },
         referer = host,
       )
     }
@@ -436,11 +540,40 @@ class StreamingCommunityChannel : Channel {
     return if (parts.size >= 2) parts[0] to parts[1] else null
   }
 
-  /** Plain paginated JSON (archive/search) — no Inertia envelope, no version header needed. */
-  private suspend fun fetchJson(url: String): JSONObject? {
-    val body = runCatching { Net.get(url, headers = mapOf("Accept" to "application/json"), referer = host) }.getOrElse { return null }
-    return runCatching { JSONObject(body) }.getOrNull()
+  /**
+   * Cold start only: [host] is a guess and the site rotates its TLD, so if [fetch] comes back null
+   * before any request has confirmed a live host, retry the same path against each remaining
+   * [hostSeeds] entry, adopting the first that produces a result as [host]/[cdn]. `url` is passed
+   * already built against the current [host]; the path is sliced back off it and re-prefixed per
+   * seed, so a repoint mid-walk still hits the right domain. Once [hostConfirmed] this is a plain
+   * passthrough. Lock-free like [syncConfigFrom]: a few concurrent probes on the very first load
+   * just converge on the same working host.
+   */
+  private suspend fun <T : Any> withColdStartFallback(url: String, fetch: suspend (String) -> T?): T? {
+    fetch(url)?.let {
+      hostConfirmed = true
+      return it
+    }
+    if (hostConfirmed) return null
+    val path = url.removePrefix(host).ifEmpty { "/" }
+    for (seed in hostSeeds) {
+      if (seed == host) continue
+      host = seed
+      cdn = "https://cdn." + seed.removePrefix("https://") + "/images/"
+      fetch("$seed$path")?.let {
+        hostConfirmed = true
+        return it
+      }
+    }
+    return null
   }
+
+  /** Plain paginated JSON (archive/search) — no Inertia envelope, no version header needed. */
+  private suspend fun fetchJson(url: String): JSONObject? =
+    withColdStartFallback(url) { u ->
+      val body = runCatching { Net.get(u, headers = mapOf("Accept" to "application/json"), referer = host) }.getOrNull()
+      body?.let { runCatching { JSONObject(it) }.getOrNull() }
+    }
 
   /**
    * A full Inertia page's JSON (needed for title/season data, which only populates fully via the
@@ -448,27 +581,32 @@ class StreamingCommunityChannel : Channel {
    * after a deploy) rather than hardcoding it.
    */
   private suspend fun fetchInertia(url: String): JSONObject? {
+    // Path relative to whatever [host] currently is: [fetchVersionFromFullPage] below can repoint
+    // [host] via the cold-start fallback, so every request here is rebuilt from `path`, never from
+    // the possibly-stale seed baked into `url`.
+    val path = url.removePrefix(host).ifEmpty { "/" }
     val version = inertiaVersion ?: fetchVersionFromFullPage(url) ?: return null
     val headers = mapOf("X-Inertia" to "true", "X-Inertia-Version" to version, "Accept" to "application/json")
     val body =
       try {
-        Net.get(url, headers = headers, referer = host)
+        Net.get("$host$path", headers = headers, referer = host)
       } catch (e: HttpStatusException) {
         if (e.code != 409) return null
-        val fresh = fetchVersionFromFullPage(url) ?: return null
+        val fresh = fetchVersionFromFullPage("$host$path") ?: return null
         inertiaVersion = fresh
-        runCatching { Net.get(url, headers = headers + ("X-Inertia-Version" to fresh), referer = host) }.getOrElse { return null }
+        runCatching { Net.get("$host$path", headers = headers + ("X-Inertia-Version" to fresh), referer = host) }.getOrElse { return null }
       } catch (e: Exception) {
         return null
       }
     return runCatching { JSONObject(body) }.getOrNull()
   }
 
-  private suspend fun fetchVersionFromFullPage(url: String): String? {
-    val html = runCatching { Net.get(url, referer = host) }.getOrElse { return null }
-    val page = extractDataPage(html) ?: return null
-    return page.optString("version").takeIf { it.isNotBlank() }.also { inertiaVersion = it }
-  }
+  private suspend fun fetchVersionFromFullPage(url: String): String? =
+    withColdStartFallback(url) { u ->
+      val html = runCatching { Net.get(u, referer = host) }.getOrNull() ?: return@withColdStartFallback null
+      val page = extractDataPage(html) ?: return@withColdStartFallback null
+      page.optString("version").takeIf { it.isNotBlank() }?.also { inertiaVersion = it }
+    }
 
   private fun extractDataPage(html: String): JSONObject? {
     val raw = Scrape.find1(html, """data-page="(.*?)"\s*>""")

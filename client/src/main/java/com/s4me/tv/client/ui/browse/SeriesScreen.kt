@@ -1,11 +1,16 @@
 package com.s4me.tv.client.ui.browse
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,6 +46,7 @@ import com.s4me.tv.client.ui.components.EpisodeRow
 import com.s4me.tv.client.ui.components.LoadingScreen
 import com.s4me.tv.engine.StreamItem
 import com.s4me.tv.engine.WatchlistStore
+import com.s4me.tv.engine.youtubeVideoId
 
 @Composable
 fun SeriesScreen(series: StreamItem, onOpen: (StreamItem) -> Unit, onBack: () -> Unit, modifier: Modifier = Modifier) {
@@ -123,6 +129,8 @@ private fun SeriesHeader(info: StreamItem) {
         model = info.backdrop ?: info.thumbnail,
         contentDescription = info.title,
         contentScale = ContentScale.Crop,
+        // Crop from the top so faces aren't sliced off (same as the movie detail header).
+        alignment = Alignment.TopCenter,
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
       )
       Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to MaterialTheme.colorScheme.background)))
@@ -134,12 +142,24 @@ private fun SeriesHeader(info: StreamItem) {
       if (meta.isNotBlank()) {
         Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
       }
-      FilledTonalButton(onClick = { inList = watchlist.toggle(info) }, modifier = Modifier.padding(top = 10.dp)) {
-        Text(if (inList) "✓  Nella lista" else "＋  La mia lista")
+      Row(modifier = Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        FilledTonalButton(onClick = { inList = watchlist.toggle(info) }) {
+          Text(if (inList) "✓  Nella lista" else "＋  La mia lista")
+        }
+        info.trailerYoutubeId?.let { id ->
+          FilledTonalButton(onClick = { openSeriesTrailer(context, id) }) { Text("▶  Trailer") }
+        }
       }
       info.plot?.let { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 4, modifier = Modifier.padding(top = 12.dp)) }
     }
   }
+}
+
+/** Opens the trailer in whatever YouTube handler the device has (mirrors DetailScreen). */
+private fun openSeriesTrailer(context: Context, videoId: String) {
+  val id = youtubeVideoId(videoId) ?: return
+  val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=$id")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+  runCatching { context.startActivity(intent) }
 }
 
 @Composable

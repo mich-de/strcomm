@@ -33,6 +33,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,9 +51,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
@@ -136,6 +141,8 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
   var fillScreen by remember { mutableStateOf(false) }
   var speed by remember { mutableFloatStateOf(1f) }
   var stats by remember { mutableStateOf(PlaybackStats()) }
+  var playerView by remember { mutableStateOf<PlayerView?>(null) }
+  var errorRetries by remember(item.url) { mutableIntStateOf(0) }
 
   DisposableEffect(exoPlayer) {
     val listener =
@@ -149,6 +156,18 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
           if (!forcedApplied) {
             selectForcedSubtitle(exoPlayer, t)?.let { forcedApplied = true }
           }
+        }
+
+        // A decoder reclaimed while the app was backgrounded (or a transient renderer fault) lands
+        // here — re-prepare in place from the current position instead of dead-ending on a black
+        // screen the play button can't revive. Capped so genuinely broken media doesn't loop.
+        override fun onPlayerError(error: PlaybackException) {
+          if (errorRetries >= 3) return
+          errorRetries++
+          val resumeAt = exoPlayer.currentPosition.coerceAtLeast(0)
+          exoPlayer.prepare()
+          if (resumeAt > 0) exoPlayer.seekTo(resumeAt)
+          exoPlayer.playWhenReady = true
         }
       }
     exoPlayer.addListener(listener)
@@ -164,6 +183,54 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
       exoPlayer.removeListener(listener)
       exoPlayer.release()
     }
+  }
+
+  // Standby / app-switch recovery. Screen-off tears down the TextureView surface, and Android can
+  // reclaim the video decoder while we're backgrounded — the player then returns in STATE_IDLE (or
+  // holding a PlaybackException) and the overlay's play button, which only flips playWhenReady,
+  // can't restart it ("se il tablet va in standby e premo play non parte"). On the way back:
+  // re-prepare from the last position if the pipeline died, and re-bind the recreated surface.
+  val lifecycleOwner = LocalLifecycleOwner.current
+  DisposableEffect(lifecycleOwner, exoPlayer) {
+    var resumePlaying = true
+    var wentAway = false
+    val observer =
+      LifecycleEventObserver { _, event ->
+        when (event) {
+          Lifecycle.Event.ON_STOP -> {
+            resumePlaying = exoPlayer.playWhenReady
+            wentAway = true
+            exoPlayer.pause()
+            // Persist here too — onDispose won't run if the app is killed while backgrounded.
+            if (originId != null) {
+              val dur = exoPlayer.duration
+              if (dur > 0) {
+                WatchProgressStore(context)
+                  .save(playbackOrigin(item, originId), exoPlayer.currentPosition.coerceAtLeast(0), dur)
+              }
+            }
+          }
+          Lifecycle.Event.ON_START -> {
+            if (wentAway) {
+              wentAway = false
+              if (exoPlayer.playerError != null || exoPlayer.playbackState == Player.STATE_IDLE) {
+                val resumeAt = exoPlayer.currentPosition.coerceAtLeast(0)
+                exoPlayer.prepare()
+                if (resumeAt > 0) exoPlayer.seekTo(resumeAt)
+              }
+              // The recreated TextureView surface needs re-attaching to the player.
+              playerView?.let {
+                it.player = null
+                it.player = exoPlayer
+              }
+              exoPlayer.playWhenReady = resumePlaying
+            }
+          }
+          else -> Unit
+        }
+      }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
   }
 
   LaunchedEffect(exoPlayer) {
@@ -206,10 +273,12 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
     AndroidView(
       modifier = Modifier.fillMaxSize(),
       factory = { ctx ->
-        (android.view.LayoutInflater.from(ctx).inflate(R.layout.player_view, null) as PlayerView).apply {
-          player = exoPlayer
-          keepScreenOn = true
-        }
+        (android.view.LayoutInflater.from(ctx).inflate(R.layout.player_view, null) as PlayerView)
+          .apply {
+            player = exoPlayer
+            keepScreenOn = true
+          }
+          .also { playerView = it }
       },
       update = {
         it.player = exoPlayer

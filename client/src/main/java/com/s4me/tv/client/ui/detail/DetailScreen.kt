@@ -9,6 +9,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -18,6 +20,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -43,6 +47,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.s4me.tv.client.ui.components.ErrorScreen
+import com.s4me.tv.client.ui.components.PosterCard
 import com.s4me.tv.engine.StreamItem
 import com.s4me.tv.engine.WatchProgressStore
 import com.s4me.tv.engine.WatchlistStore
@@ -52,6 +57,7 @@ import java.util.Locale
 @Composable
 fun DetailScreen(
   item: StreamItem,
+  onOpen: (StreamItem) -> Unit,
   onPlay: (StreamItem) -> Unit,
   onPersonSearch: (String) -> Unit,
   onBack: () -> Unit,
@@ -60,6 +66,7 @@ fun DetailScreen(
   val viewModel: DetailViewModel = viewModel(key = item.url) { DetailViewModel(item) }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   val display by viewModel.preview.collectAsStateWithLifecycle()
+  val related by viewModel.related.collectAsStateWithLifecycle()
   val context = LocalContext.current
   val scroll = rememberScrollState()
 
@@ -70,6 +77,9 @@ fun DetailScreen(
           model = display.backdrop ?: display.thumbnail,
           contentDescription = display.title,
           contentScale = ContentScale.Crop,
+          // Crop from the top, not the centre — a centred crop of a taller-than-frame still lops
+          // the top off ("se ci sono persone... vengono tagliate le teste").
+          alignment = Alignment.TopCenter,
           modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
         )
         Box(
@@ -98,18 +108,24 @@ fun DetailScreen(
         }
         display.genres?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp)) }
 
-        PlayActions(item = display, state = state, onPlay = onPlay, modifier = Modifier.padding(top = 16.dp))
+        PlayActions(
+          item = display,
+          state = state,
+          onPlay = onPlay,
+          onTrailer = { id -> openTrailer(context, id) },
+          modifier = Modifier.padding(top = 16.dp),
+        )
 
         display.plot?.let {
           Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 18.dp))
         }
 
-        display.trailerYoutubeId?.let { id ->
-          FilledTonalButton(onClick = { openTrailer(context, id) }, modifier = Modifier.padding(top = 14.dp)) { Text("▶  Trailer") }
-        }
-
         NameRow("Cast", display.cast, onPersonSearch, Modifier.padding(top = 16.dp))
         NameRow("Regia", display.director, onPersonSearch, Modifier.padding(top = 8.dp))
+
+        if (related.isNotEmpty()) {
+          SagaRow(items = related, onOpen = onOpen, modifier = Modifier.padding(top = 24.dp))
+        }
 
         if (state is DetailUiState.Error) {
           Text((state as DetailUiState.Error).message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 16.dp))
@@ -131,35 +147,57 @@ fun DetailScreen(
   }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PlayActions(item: StreamItem, state: DetailUiState, onPlay: (StreamItem) -> Unit, modifier: Modifier = Modifier) {
+private fun PlayActions(
+  item: StreamItem,
+  state: DetailUiState,
+  onPlay: (StreamItem) -> Unit,
+  onTrailer: (String) -> Unit,
+  modifier: Modifier = Modifier,
+) {
   val context = LocalContext.current
   val progressStore = remember { WatchProgressStore(context) }
   val watchlistStore = remember { WatchlistStore(context) }
   val resumeMs = remember(item.url) { progressStore.positionFor(item.url) }
-  var inList by androidx.compose.runtime.remember(item.url) { androidx.compose.runtime.mutableStateOf(watchlistStore.contains(item.url)) }
+  var inList by remember(item.url) { mutableStateOf(watchlistStore.contains(item.url)) }
 
-  Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-    val sources = (state as? DetailUiState.Success)?.sources.orEmpty()
-    val ready = sources.firstOrNull()
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-      if (resumeMs != null && resumeMs > 0) {
-        Button(onClick = { ready?.let(onPlay) }, enabled = ready != null) { Text("▶  Riprendi · ${formatTime(resumeMs)}") }
-        FilledTonalButton(
-          onClick = {
-            progressStore.remove(item.url)
-            ready?.let(onPlay)
-          },
-          enabled = ready != null,
-        ) { Text("↻  Ricomincia") }
-      } else {
-        Button(onClick = { ready?.let(onPlay) }, enabled = ready != null) {
-          Text(if (state is DetailUiState.Loading) "Caricamento…" else "▶  Guarda")
-        }
+  val sources = (state as? DetailUiState.Success)?.sources.orEmpty()
+  val ready = sources.firstOrNull()
+  // FlowRow so Guarda / Trailer / La mia lista wrap instead of overflowing a narrow phone — and
+  // the trailer sits with the actions rather than below the plot, keeping the poster taller.
+  FlowRow(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    if (resumeMs != null && resumeMs > 0) {
+      Button(onClick = { ready?.let(onPlay) }, enabled = ready != null) { Text("▶  Riprendi · ${formatTime(resumeMs)}") }
+      FilledTonalButton(
+        onClick = {
+          progressStore.remove(item.url)
+          ready?.let(onPlay)
+        },
+        enabled = ready != null,
+      ) { Text("↻  Ricomincia") }
+    } else {
+      Button(onClick = { ready?.let(onPlay) }, enabled = ready != null) {
+        Text(if (state is DetailUiState.Loading) "Caricamento…" else "▶  Guarda")
       }
-      FilledTonalButton(onClick = { inList = watchlistStore.toggle(item) }) {
-        Text(if (inList) "✓  Nella lista" else "＋  La mia lista")
-      }
+    }
+    item.trailerYoutubeId?.let { id -> FilledTonalButton(onClick = { onTrailer(id) }) { Text("▶  Trailer") } }
+    FilledTonalButton(onClick = { inList = watchlistStore.toggle(item) }) {
+      Text(if (inList) "✓  Nella lista" else "＋  La mia lista")
+    }
+  }
+}
+
+/** "Altri capitoli della saga" — the TMDB collection row (see [DetailViewModel.related]). */
+@Composable
+private fun SagaRow(items: List<StreamItem>, onOpen: (StreamItem) -> Unit, modifier: Modifier = Modifier) {
+  Column(modifier = modifier) {
+    Text(
+      "Altri capitoli della saga",
+      style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+    )
+    LazyRow(modifier = Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+      items(items, key = { it.url }) { m -> PosterCard(item = m, onClick = { onOpen(m) }, width = 104.dp) }
     }
   }
 }

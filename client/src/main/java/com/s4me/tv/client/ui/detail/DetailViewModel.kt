@@ -27,6 +27,11 @@ class DetailViewModel(private val item: StreamItem) : ViewModel() {
   private val _preview = MutableStateFlow(item)
   val preview: StateFlow<StreamItem> = _preview.asStateFlow()
 
+  /** "Altri capitoli della saga" — the movie's TMDB collection siblings, resolved to catalogue
+   *  items. Lands after enrichment, independently of the play sources. Empty for a standalone film. */
+  private val _related = MutableStateFlow<List<StreamItem>>(emptyList())
+  val related: StateFlow<List<StreamItem>> = _related.asStateFlow()
+
   init {
     viewModelScope.launch(Dispatchers.IO) {
       val channel = ChannelRegistry.byId(item.channelId)
@@ -36,6 +41,7 @@ class DetailViewModel(private val item: StreamItem) : ViewModel() {
       }
       val enriched = runCatching { channel.detail(item) }.getOrDefault(item)
       _preview.value = enriched
+      launch { _related.value = runCatching { channel.collection(enriched) }.getOrDefault(emptyList()) }
       runCatching { channel.findVideos(enriched) }
         .onSuccess { sources ->
           _uiState.value =

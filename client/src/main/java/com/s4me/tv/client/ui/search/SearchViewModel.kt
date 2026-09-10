@@ -17,6 +17,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+
+private val WHITESPACE = Regex("\\s+")
 
 sealed interface SearchUiState {
   data class Idle(val history: List<String> = emptyList()) : SearchUiState
@@ -71,25 +75,38 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
       if (results.isEmpty()) SearchUiState.Error("Nessun risultato per “$query”") else SearchUiState.Success(results)
   }
 
-  private suspend fun verifyCredited(candidates: List<StreamItem>, personName: String): List<StreamItem> =
-    coroutineScope {
+  /** Keep only the raw hits that actually credit [personName] as cast or director (the site's
+   *  search is fuzzy full-text). Two things had been quietly costing real credits: a hard `take(45)`
+   *  cut — a person's own films rank LOW in a text search for their name, so the real ones sit past
+   *  #45 — and a lone failed `detail()` fetch (45 fired at once) dropping that title silently.
+   *  So: verify the whole list (bounded to 8 in flight, one retry each), and match on a
+   *  whitespace-normalised name, exact on a split token or as a substring of the joined credits. */
+  private suspend fun verifyCredited(candidates: List<StreamItem>, personName: String): List<StreamItem> {
+    val target = personName.trim().lowercase().replace(WHITESPACE, " ")
+    val gate = Semaphore(8)
+    return coroutineScope {
       candidates
         .filter { it.kind == ItemKind.MOVIE || it.kind == ItemKind.SERIES }
-        .take(45)
+        .distinctBy { it.url }
+        .take(120) // safety valve only — a real person's result list is far shorter
         .map { item ->
           async(Dispatchers.IO) {
-            val channel = ChannelRegistry.byId(item.channelId) ?: return@async null
-            val detail = runCatching { channel.detail(item, withRatings = false) }.getOrNull() ?: return@async null
-            val credited =
-              listOfNotNull(detail.cast, detail.director)
-                .flatMap { it.split(", ") }
-                .any { it.equals(personName, ignoreCase = true) }
-            item.takeIf { credited }
+            gate.withPermit {
+              val channel = ChannelRegistry.byId(item.channelId) ?: return@withPermit null
+              val detail =
+                runCatching { channel.detail(item, withRatings = false) }.getOrNull()
+                  ?: runCatching { channel.detail(item, withRatings = false) }.getOrNull()
+                  ?: return@withPermit null
+              val credits = listOfNotNull(detail.cast, detail.director).joinToString(", ").lowercase().replace(WHITESPACE, " ")
+              val credited = credits.split(", ").any { it.trim() == target } || credits.contains(target)
+              item.takeIf { credited }
+            }
           }
         }
         .awaitAll()
         .filterNotNull()
     }
+  }
 
   fun clearHistory() {
     historyStore.clear()

@@ -146,6 +146,7 @@ fun ClientApp() {
             entry<Detail> { key ->
               DetailScreen(
                 item = key.item,
+                onOpen = open,
                 onPlay = { backStack.add(Player(it)) },
                 onPersonSearch = { name -> backStack.add(Search(initialQuery = name, isPersonQuery = true)) },
                 onBack = back,

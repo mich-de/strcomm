@@ -40,12 +40,17 @@ object Tmdb {
     val genresIt: String?,
   )
 
+  /** One movie in a TMDB "belongs_to_collection" set — enough for the channel to resolve it to a
+   *  catalogue entry by tmdb id (exact) or title+year (fallback). */
+  data class CollectionPart(val tmdbId: String, val title: String, val year: String?)
+
   private const val API_BASE = "https://api.themoviedb.org/3"
   private const val SITE_BASE = "https://www.themoviedb.org"
   private val apiKey = BuildConfig.TMDB_API_KEY
   private val cache = ConcurrentHashMap<String, Info>()
   private val seasonCache = ConcurrentHashMap<String, String>()
   private val seasonYearsCache = ConcurrentHashMap<String, Map<Int, String>>()
+  private val collectionCache = ConcurrentHashMap<String, List<CollectionPart>>()
 
   /** True when an API key is set — the scrape path always works, so this is just "use the nicer one". */
   val usingApi: Boolean
@@ -155,6 +160,58 @@ object Tmdb {
       }.getOrDefault(emptyMap())
     seasonYearsCache[tmdbId] = map
     return map
+  }
+
+  /** The other movies in this movie's TMDB collection (the "saga"/franchise), chronological and
+   *  with the current film removed. Empty for a standalone film. API path when a key is set (one
+   *  `/movie` + one `/collection` call), else two scrapes of the public TMDB pages — the movie page
+   *  links its collection, the collection page server-renders every entry. Cached per movie id. */
+  suspend fun collection(movieTmdbId: String): List<CollectionPart> {
+    if (movieTmdbId.isBlank()) return emptyList()
+    collectionCache[movieTmdbId]?.let { return it }
+    val parts =
+      runCatching { if (usingApi) apiCollection(movieTmdbId) else scrapeCollection(movieTmdbId) }
+        .getOrDefault(emptyList())
+        .filterNot { it.tmdbId == movieTmdbId }
+        .distinctBy { it.tmdbId }
+        .sortedBy { it.year ?: "9999" }
+    collectionCache[movieTmdbId] = parts
+    return parts
+  }
+
+  private suspend fun apiCollection(movieTmdbId: String): List<CollectionPart> {
+    val movie = JSONObject(Net.get("$API_BASE/movie/$movieTmdbId?api_key=$apiKey&language=it-IT"))
+    val cid = movie.optJSONObject("belongs_to_collection")?.optInt("id", -1)?.takeIf { it > 0 } ?: return emptyList()
+    val arr = JSONObject(Net.get("$API_BASE/collection/$cid?api_key=$apiKey&language=it-IT")).optJSONArray("parts") ?: return emptyList()
+    return (0 until arr.length()).mapNotNull { i ->
+      val p = arr.getJSONObject(i)
+      val pid = p.optInt("id", -1).takeIf { it > 0 } ?: return@mapNotNull null
+      val t = p.optString("title").takeIf { it.isNotBlank() } ?: p.optString("name").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+      CollectionPart(pid.toString(), t, p.optString("release_date").take(4).takeIf { y -> y.length == 4 })
+    }
+  }
+
+  // Keyless: read the collection id off the movie page, then the collection page server-renders
+  // every entry as a "/movie/{id}-slug" card. Titles come out it-IT, matching the source site's.
+  private suspend fun scrapeCollection(movieTmdbId: String): List<CollectionPart> {
+    val moviePage = Net.get("$SITE_BASE/movie/$movieTmdbId?language=it-IT")
+    // The current TMDB build no longer prints a plain "/collection/{id}" link on the movie page —
+    // that panel is lazy-loaded and the id survives only as the kendo.format() argument in its
+    // loader script (`.../collection/{0}/static_cache/movie_card...'), '2344')`). Try the real-id
+    // form first (other TMDB page types still use it), then that templated form.
+    val cid =
+      Regex("""/collection/(\d+)[/"?]""").find(moviePage)?.groupValues?.get(1)
+        ?: Regex("""collection/\{0\}/static_cache/movie_card[^']*'\),\s*'(\d+)'""").find(moviePage)?.groupValues?.get(1)
+        ?: return emptyList()
+    val doc = Jsoup.parse(Net.get("$SITE_BASE/collection/$cid?language=it-IT"))
+    return doc.select("a[href*=/movie/]").mapNotNull { a ->
+      val pid = Regex("""/movie/(\d+)""").find(a.attr("href"))?.groupValues?.get(1) ?: return@mapNotNull null
+      val raw = a.text().trim().ifBlank { a.attr("title").trim() }.ifBlank { a.selectFirst("img")?.attr("alt")?.trim().orEmpty() }
+      // Card text is "Titolo IT (Original Title)" — the parenthetical only muddies a catalogue
+      // re-search, so keep what precedes it.
+      val t = raw.substringBefore(" (").trim().ifBlank { raw }
+      t.takeIf { it.isNotBlank() }?.let { CollectionPart(pid, it, null) }
+    }
   }
 
   /** Best YouTube clip: a real "Trailer" beats a teaser/clip, Italian beats other languages, and

@@ -41,6 +41,12 @@ interface Channel {
    *  verification) passes false to skip that cost. */
   suspend fun detail(item: StreamItem, withRatings: Boolean = true): StreamItem
 
+  /** Other entries in this MOVIE's TMDB collection (the "saga"), resolved to catalogue items.
+   *  Empty when the title isn't a MOVIE, isn't part of a collection, or none of the siblings are on
+   *  the source. TMDB-linked — matched by tmdb id where the source exposes one, else title+year;
+   *  never a bare keyword guess. */
+  suspend fun collection(item: StreamItem): List<StreamItem> = emptyList()
+
   /** Resolves a MOVIE/EPISODE item's page into playable candidates (one PLAYABLE StreamItem per server found). */
   suspend fun findVideos(item: StreamItem): List<StreamItem>
 

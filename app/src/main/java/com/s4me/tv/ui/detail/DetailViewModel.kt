@@ -22,6 +22,11 @@ class DetailViewModel(private val item: StreamItem) : ViewModel() {
   private val _uiState = MutableStateFlow<DetailUiState>(DetailUiState.Loading)
   val uiState: StateFlow<DetailUiState> = _uiState.asStateFlow()
 
+  /** "Altri capitoli della saga" — the movie's TMDB collection siblings, resolved to catalogue
+   *  items. Loads independently of the play sources and stays empty for a standalone film. */
+  private val _related = MutableStateFlow<List<StreamItem>>(emptyList())
+  val related: StateFlow<List<StreamItem>> = _related.asStateFlow()
+
   init {
     viewModelScope.launch(Dispatchers.IO) {
       val channel = ChannelRegistry.byId(item.channelId)
@@ -30,6 +35,7 @@ class DetailViewModel(private val item: StreamItem) : ViewModel() {
         return@launch
       }
       val enriched = runCatching { channel.detail(item) }.getOrDefault(item)
+      launch { _related.value = runCatching { channel.collection(enriched) }.getOrDefault(emptyList()) }
       // Resolve from the enriched item, not the raw nav-arg one, so findVideos() has the full
       // genres/cast/director/runtime/tmdbId/imdbId to carry onto the PLAYABLE item for the player's
       // info overlay — resolution itself only reads url/kind, both untouched by detail().

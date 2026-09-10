@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,7 +23,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -178,30 +181,138 @@ fun PosterCard(
  *  the shared size referenced by every LazyRow/LazyVerticalGrid that lays out [PosterCard]s. */
 val POSTER_WIDTH = 92.dp
 
-/** Width of the big rank numeral in [RankedPosterCard] — wide enough for "10" without crowding
- *  the poster right next to it. */
-private val RANK_NUMBER_WIDTH = 56.dp
+/** Width of a [CoverCard] — wide (16:9) rather than tall, so a Home row fits fewer of these than
+ *  of a [PosterCard], the same trade the source site's own landscape rows make. */
+val COVER_WIDTH = 176.dp
 
 /**
- * A ranked poster for "I titoli del momento": a big numeral to the left of the same [PosterCard]
- * used everywhere else, Netflix's own "Top 10" row treatment ("le puoi fare orizzontali stile
- * netflix?") — the numeral turns an otherwise-identical portrait card into a wider, horizontal
- * silhouette. Reuses [PosterCard] wholesale (badges, marquee, fixed two-line label) rather than
- * duplicating it, so the numeral is the only thing this adds.
+ * A LANDSCAPE title card, matching streamingcommunity's own site rows ("le voglio orizzontali come
+ * su streamingcommunityz.taxi"): a 16:9 `cover` still with the transparent title `logo` overlaid
+ * bottom-left over a scrim, instead of a portrait poster with a text label beneath. Carries the
+ * same focus-zoom, year/score badges, resume bar and optional Top-10 [rank] numeral as
+ * [PosterCard]. Degrades gracefully: art falls back cover → backdrop → thumbnail → flat box, and
+ * the logo falls back to the plain title text. [showLabel] adds a one-line title UNDER the card
+ * for the personal rows ("Continua a guardare" / "La mia lista"), where knowing which show an
+ * episode belongs to matters and the overlaid logo alone was judged too easy to miss.
  */
 @Composable
-fun RankedPosterCard(rank: Int, item: StreamItem, onClick: () -> Unit, modifier: Modifier = Modifier, cardModifier: Modifier = Modifier) {
-  // Top-aligned against the poster's own image, not PosterCard's overall bottom (which trails off
-  // into its two-line text label) — that would drag the numeral down past the artwork entirely.
-  Row(modifier = modifier, verticalAlignment = Alignment.Top) {
-    Text(
-      text = rank.toString(),
-      style = MaterialTheme.typography.displayLarge.copy(fontWeight = FontWeight.Black),
-      color = Color.White.copy(alpha = 0.8f),
-      maxLines = 1,
-      modifier = Modifier.width(RANK_NUMBER_WIDTH).offset(x = 8.dp),
-    )
-    PosterCard(item = item, onClick = onClick, cardModifier = cardModifier)
+fun CoverCard(
+  item: StreamItem,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+  cardModifier: Modifier = Modifier,
+  onLongClick: (() -> Unit)? = null,
+  rank: Int? = null,
+  showLabel: Boolean = false,
+) {
+  var isFocused by remember { mutableStateOf(false) }
+  // Slightly gentler zoom than the portrait card's 1.1f — a wide card growing 10% sweeps a lot
+  // more horizontal space and shoves its row neighbours further, which read as jumpy on the box.
+  val scale by animateFloatAsState(if (isFocused) 1.07f else 1f, label = "coverFocusScale")
+  val cardShape = RoundedCornerShape(8.dp)
+  val noLibraryScale = remember { CardDefaults.scale(scale = 1f, focusedScale = 1f, pressedScale = 1f) }
+
+  Column(modifier = modifier.width(COVER_WIDTH).zIndex(if (isFocused) 1f else 0f)) {
+    Card(
+      onClick = onClick,
+      onLongClick = onLongClick,
+      shape = CardDefaults.shape(cardShape),
+      scale = noLibraryScale,
+      modifier =
+        cardModifier
+          .fillMaxWidth()
+          .aspectRatio(16f / 9f)
+          .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+            transformOrigin = TransformOrigin(0.5f, 1f)
+          }
+          .onFocusChanged { isFocused = it.isFocused },
+    ) {
+      Box(Modifier.fillMaxSize()) {
+        val art = item.cover ?: item.backdrop ?: item.thumbnail
+        if (art != null) {
+          AsyncImage(model = art, contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        } else {
+          Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
+        }
+        // Bottom scrim: the `cover` art is busy toward its lower edge on plenty of titles, and the
+        // logo (or fallback text) has to stay legible over any of them.
+        Box(
+          Modifier.fillMaxSize()
+            .background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.85f)))
+        )
+        if (item.logo != null) {
+          AsyncImage(
+            model = item.logo,
+            contentDescription = item.title,
+            contentScale = ContentScale.Fit,
+            alignment = Alignment.BottomStart,
+            modifier = Modifier.align(Alignment.BottomStart).padding(10.dp).fillMaxWidth(0.66f).heightIn(max = 32.dp),
+          )
+        } else {
+          Text(
+            text = item.seriesTitle ?: item.title,
+            style = MaterialTheme.typography.labelLarge,
+            color = Color.White,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.BottomStart).padding(10.dp),
+          )
+        }
+        item.year?.let { year ->
+          Text(
+            text = year,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White,
+            modifier =
+              Modifier.align(Alignment.TopStart)
+                .padding(4.dp)
+                .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(4.dp))
+                .padding(horizontal = 5.dp, vertical = 2.dp),
+          )
+        }
+        item.quality?.let { score ->
+          Text(
+            text = score,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White,
+            modifier =
+              Modifier.align(Alignment.TopEnd)
+                .padding(4.dp)
+                .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(4.dp))
+                .padding(horizontal = 5.dp, vertical = 2.dp),
+          )
+        }
+        rank?.let { r ->
+          Text(
+            text = "$r",
+            style =
+              MaterialTheme.typography.headlineMedium.copy(
+                fontWeight = FontWeight.Black,
+                shadow = Shadow(color = Color.Black, offset = Offset.Zero, blurRadius = 14f),
+              ),
+            color = Color.White,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(horizontal = 8.dp, vertical = 6.dp),
+          )
+        }
+        item.progress?.let { fraction ->
+          Box(modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Color.Black.copy(alpha = 0.55f))) {
+            Box(modifier = Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).fillMaxHeight().background(MaterialTheme.colorScheme.primary))
+          }
+        }
+      }
+    }
+    if (showLabel) {
+      val isEpisode = item.kind == ItemKind.EPISODE
+      Text(
+        text = if (isEpisode) item.seriesTitle ?: item.title else item.title,
+        style = MaterialTheme.typography.bodySmall,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(top = 4.dp).then(if (isFocused) Modifier.basicMarquee() else Modifier),
+      )
+    }
   }
 }
 

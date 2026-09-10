@@ -74,8 +74,7 @@ import com.s4me.tv.engine.HomeSection
 import com.s4me.tv.engine.StreamItem
 import com.s4me.tv.navKeyFor
 import com.s4me.tv.ui.components.BrandedLoading
-import com.s4me.tv.ui.components.PosterCard
-import com.s4me.tv.ui.components.RankedPosterCard
+import com.s4me.tv.ui.components.CoverCard
 import com.s4me.tv.ui.components.WatchlistToggleButton
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -496,15 +495,15 @@ private fun HomeSectionRow(section: HomeSection, onNavigate: (NavKey) -> Unit, o
     Text(text = section.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 48.dp, bottom = 12.dp))
     LazyRow(contentPadding = PaddingValues(horizontal = 48.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
       itemsIndexed(section.items, key = { _, it -> it.url }) { index, item ->
-        if (trendingRow) {
-          RankedPosterCard(rank = item.rank ?: (index + 1), item = item, onClick = { onNavigate(navKeyFor(item)) })
-        } else {
-          PosterCard(
-            item = item,
-            onClick = { onNavigate(navKeyFor(item)) },
-            onLongClick = if (personalRow) ({ onPersonalItemRemove(section.channelId, item) }) else null,
-          )
-        }
+        // Landscape cards, matching the source site's own Home rows. Trending rows keep the
+        // overlaid Top-10 numeral; personal rows keep a title line under the card.
+        CoverCard(
+          item = item,
+          onClick = { onNavigate(navKeyFor(item)) },
+          onLongClick = if (personalRow) ({ onPersonalItemRemove(section.channelId, item) }) else null,
+          rank = if (trendingRow) item.rank ?: (index + 1) else null,
+          showLabel = personalRow,
+        )
       }
     }
   }

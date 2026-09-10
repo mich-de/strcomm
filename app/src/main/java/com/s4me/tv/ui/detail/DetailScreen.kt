@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -30,6 +32,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -45,14 +48,17 @@ import com.s4me.tv.engine.ItemKind
 import com.s4me.tv.engine.StreamItem
 import com.s4me.tv.engine.WatchProgressStore
 import com.s4me.tv.engine.youtubeVideoId
+import com.s4me.tv.navKeyFor
 import com.s4me.tv.ui.components.LoadingIndicator
 import com.s4me.tv.ui.components.NameChipsRow
+import com.s4me.tv.ui.components.PosterCard
 import com.s4me.tv.ui.components.WatchlistToggleButton
 
 @Composable
 fun DetailScreen(item: StreamItem, onNavigate: (NavKey) -> Unit, modifier: Modifier = Modifier) {
   val viewModel: DetailViewModel = viewModel(key = item.url) { DetailViewModel(item) }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
+  val related by viewModel.related.collectAsStateWithLifecycle()
   // Renders from whatever's known so far: the nav-arg item immediately, then the same fields
   // upgrade in place once detail() enrichment (plot for movies, genres, cast, director) lands.
   val displayItem = (state as? DetailUiState.Success)?.item ?: item
@@ -90,12 +96,17 @@ fun DetailScreen(item: StreamItem, onNavigate: (NavKey) -> Unit, modifier: Modif
       }
     }
 
-    DetailContent(displayItem = displayItem, state = state, onNavigate = onNavigate)
+    DetailContent(displayItem = displayItem, state = state, related = related, onNavigate = onNavigate)
   }
 }
 
 @Composable
-private fun DetailContent(displayItem: StreamItem, state: DetailUiState, onNavigate: (NavKey) -> Unit) {
+private fun DetailContent(
+  displayItem: StreamItem,
+  state: DetailUiState,
+  related: List<StreamItem>,
+  onNavigate: (NavKey) -> Unit,
+) {
   // Order matters for TV: title + meta, then the (focusable) Guarda button, THEN the long text.
   // The button is what gets auto-focused, and a LazyColumn scrolls to keep the focused item in
   // view — so with the button near the top, opening a detail leaves the title on screen instead
@@ -195,7 +206,36 @@ private fun DetailContent(displayItem: StreamItem, state: DetailUiState, onNavig
       }
     }
 
+    // "Altri capitoli della saga" — the TMDB collection, each sibling that's also on the source
+    // resolved to a real catalogue MOVIE. Lands after enrichment (its own coroutine in the VM),
+    // so it just isn't emitted until non-empty — this is the one row that sits below the fold,
+    // reached with DOWN and returned from with UP.
+    if (related.isNotEmpty()) {
+      item {
+        SagaRow(items = related, onNavigate = onNavigate, modifier = Modifier.padding(top = 28.dp))
+      }
+    }
+
     item { Spacer(Modifier.height(40.dp)) }
+  }
+}
+
+/** The movie's TMDB collection as a focusable poster row (same [PosterCard] as everywhere else). */
+@Composable
+private fun SagaRow(items: List<StreamItem>, onNavigate: (NavKey) -> Unit, modifier: Modifier = Modifier) {
+  Column(modifier = modifier) {
+    Text(
+      text = "Altri capitoli della saga",
+      style = MaterialTheme.typography.titleMedium,
+    )
+    LazyRow(
+      modifier = Modifier.padding(top = 12.dp),
+      horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+      items(items, key = { it.url }) { movie ->
+        PosterCard(item = movie, onClick = { onNavigate(navKeyFor(movie)) })
+      }
+    }
   }
 }
 

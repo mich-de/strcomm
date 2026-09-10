@@ -15,6 +15,13 @@ data class StreamItem(
   val thumbnail: String? = null,
   /** Wide "background" still, for a hero banner — null for items only ever shown as a poster card. */
   val backdrop: String? = null,
+  /** Wide 16:9 "cover" art, purpose-made for a landscape title card — distinct from [backdrop]
+   *  (the full-bleed hero still) and [thumbnail] (the 2:3 poster). Drives :app's horizontal Home
+   *  rows, which mirror streamingcommunity's own site ("le voglio orizzontali come su ...taxi"). */
+  val cover: String? = null,
+  /** Transparent title-treatment "logo" image. Overlaid on the landscape [cover] card the way the
+   *  source site shows it, in place of a plain text label. */
+  val logo: String? = null,
   val plot: String? = null,
   val year: String? = null,
   val quality: String? = null,
