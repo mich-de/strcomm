@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Amber play-triangle in a soft rounded square — matches the app's brand accent
+         (theme.AccentAmber) so the splash reads as the same app, not a generic template icon. -->
+    <path
+        android:fillColor="#1D2027"
+        android:pathData="M20,16 h68 a12,12 0 0 1 12,12 v52 a12,12 0 0 1 -12,12 h-68 a12,12 0 0 1 -12,-12 v-52 a12,12 0 0 1 12,-12 z" />
+    <path
+        android:fillColor="#FFA726"
+        android:pathData="M42,34 L78,54 L42,74 Z" />
+</vector>
