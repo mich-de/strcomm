@@ -18,6 +18,8 @@ import com.s4me.tv.engine.Tmdb
 import com.s4me.tv.engine.youtubeVideoId
 import java.io.IOException
 import java.net.URLEncoder
+import java.text.Normalizer
+import kotlin.math.abs
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -350,7 +352,7 @@ class StreamingCommunityChannel : Channel {
         parts.map { part ->
           async {
             runCatching {
-                val hits = search(part.title).filter { it.kind == ItemKind.MOVIE }
+                val hits = searchOrNull(part.title).orEmpty().filter { it.kind == ItemKind.MOVIE }
                 hits.firstOrNull { it.tmdbId != null && it.tmdbId == part.tmdbId }
                   ?: hits.firstOrNull { looseTitleMatch(it.title, part.title) && (part.year == null || it.year == part.year) }
                   ?: hits.firstOrNull { looseTitleMatch(it.title, part.title) }
@@ -475,27 +477,64 @@ class StreamingCommunityChannel : Channel {
     return "$playlistUrl${sep}token=$token&expires=$expires$fhd"
   }
 
-  override suspend fun search(query: String): List<StreamItem> = searchOrNull(query).orEmpty()
-
-  override suspend fun searchOrNull(query: String): List<StreamItem>? {
-    val json = fetchJson("$host/it/search?q=${URLEncoder.encode(query, "UTF-8")}") ?: return null
-    return rankByRelevance(query, parseTitles(json.optJSONArray("data") ?: JSONArray()))
+  /** What a person typed: a person's name gets their filmography ([personResults]), anything else
+   *  the title ranking. */
+  override suspend fun search(query: String): List<StreamItem> {
+    val items = siteSearch(query) ?: return emptyList()
+    return personResults(query, items) ?: rankByRelevance(query, items)
   }
+
+  /** Title resolution (charts, Oscar lists, the saga row): title ranking only — no person lookup,
+   *  which would be a wasted TMDB request per title. */
+  override suspend fun searchOrNull(query: String): List<StreamItem>? = siteSearch(query)?.let { rankByRelevance(query, it) }
+
+  private suspend fun siteSearch(query: String): List<StreamItem>? {
+    val json = fetchJson("$host/it/search?q=${URLEncoder.encode(query, "UTF-8")}") ?: return null
+    return parseTitles(json.optJSONArray("data") ?: JSONArray())
+  }
+
+  /**
+   * A person's name ("Sergio Leone"). The site matches it against cast and director as well as
+   * titles, but mixed in with anything that merely has a "Sergio" or a "Leone" somewhere — so keep
+   * what TMDB says the person directed or acted in ([Tmdb.personCredits]), found among these
+   * results by title + year, plus the titles that name them (a documentary about them). Null — so
+   * the title ranking applies — for a one-word query, a name TMDB doesn't know as exactly that
+   * person, or a person none of whose credits came back in these results.
+   */
+  private suspend fun personResults(query: String, items: List<StreamItem>): List<StreamItem>? {
+    if (!query.trim().contains(' ')) return null
+    val credits = Tmdb.personCredits(query) ?: return null
+    val credited = items.filter { item -> credits.any { it.matches(item) } }
+    if (credited.isEmpty()) return null
+    val name = titleKey(query)
+    return (items.filter { titleKey(it.title).contains(name) } + credited).distinctBy { it.url }
+  }
+
+  /** Same kind, same title once accents and punctuation are ignored, and a year at most one off
+   *  (release dates drift between TMDB and the site). No containment: "Per un pugno di dollari"
+   *  must not claim a longer title that starts the same way. */
+  private fun Tmdb.PersonCredit.matches(item: StreamItem): Boolean {
+    if (isSeries != (item.kind == ItemKind.SERIES)) return false
+    if (titleKey(title) != titleKey(item.title)) return false
+    val itemYear = item.year?.toIntOrNull()
+    return year == null || itemYear == null || abs(year - itemYear) <= 1
+  }
+
+  private fun titleKey(s: String): String =
+    Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
 
   /**
    * The site's search is a fuzzy STEM match: `q=matrix` returns the 4 real Matrix films and then
    * ~55 "Matrimonio…"/"Matriarch"/"Matricola" titles sharing only the "matri" stem ("matrix ha
    * dato un sacco di titoli"). Re-rank by how the query sits in the TITLE — exact, whole-word
-   * prefix, whole word, bare substring — and drop the long tail the site matched on a stem / plot /
-   * cast name instead of the title, but only where that tail is noise: a one-word query with a
-   * solid title hit (the stem case above), or any query a title matches exactly. Stable sort, so
-   * inside a tier the site's own ordering is kept.
+   * prefix, whole word, bare substring — and once any of those solid tiers has a hit, drop the
+   * long tail the site matched on a stem / plot / cast name instead of the title. Stable sort, so
+   * inside a tier the site's own ordering is kept. A query that hits no title at all lands entirely
+   * in the last tier and is returned untouched.
    *
-   * A longer query that merely sits inside a title is usually a person, and for a person the tail
-   * is the answer: "Sergio Leone" hits one title (a documentary about him), while the site returns
-   * his six films as #4–#9, matched on the director — dropping the tail left only the documentary
-   * ("non trova film di Sergio Leone"). Those keep everything, title matches first, which is also
-   * what the person-search verification path downstream needs.
+   * People's names don't get here when TMDB knows them — [personResults] handles those, because for
+   * a person the tail is the answer: "Sergio Leone" hits one title (a documentary about him) while
+   * his films come back as #4–#9, matched on the director ("non trova film di Sergio Leone").
    */
   private fun rankByRelevance(query: String, items: List<StreamItem>): List<StreamItem> {
     fun norm(s: String) = s.lowercase().replace(Regex("[^\\p{L}\\p{Nd}]+"), " ").trim()
@@ -516,8 +555,8 @@ class StreamingCommunityChannel : Channel {
     // so for those keep only exact / whole-word matches.
     val keep = if (q.length <= 3) 2 else 3
     val scored = items.map { it to tier(it.title) }
-    val dropTail = scored.any { it.second == 0 } || (!q.contains(' ') && scored.any { it.second <= keep })
-    return scored.filter { !dropTail || it.second <= keep }.sortedBy { it.second }.map { it.first }
+    val solid = scored.any { it.second <= keep }
+    return scored.filter { !solid || it.second <= keep }.sortedBy { it.second }.map { it.first }
   }
 
   // --- shared helpers -----------------------------------------------------------------------

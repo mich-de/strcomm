@@ -62,8 +62,9 @@ interface Channel {
 
   suspend fun search(query: String): List<StreamItem>
 
-  /** Like [search], but null when the source couldn't be asked at all (network, a ban) — an empty
-   *  list means it was asked and nothing matched. For callers that remember the answer
-   *  ([TitleResolver]), which must never store a failed request as "not in the catalogue". */
+  /** A title lookup rather than what a person typed: title-ranked results, and null when the source
+   *  couldn't be asked at all (network, a ban) — an empty list means it was asked and nothing
+   *  matched. For callers resolving titles named elsewhere ([TitleResolver], the saga row), which
+   *  must never store a failed request as "not in the catalogue". */
   suspend fun searchOrNull(query: String): List<StreamItem>? = search(query)
 }

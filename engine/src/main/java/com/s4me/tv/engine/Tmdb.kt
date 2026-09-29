@@ -1,9 +1,12 @@
 package com.s4me.tv.engine
 
+import java.net.URLEncoder
+import java.text.Normalizer
 import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONArray
 import org.json.JSONObject
 import org.jsoup.Jsoup
+import org.jsoup.parser.Parser
 
 private val YT_ID = Regex("[A-Za-z0-9_-]{11}")
 private val YT_ID_IN_URL = Regex("(?:v=|/embed/|/shorts/|youtu\\.be/|vnd\\.youtube:/?/?)([A-Za-z0-9_-]{11})")
@@ -45,6 +48,13 @@ object Tmdb {
    *  catalogue entry by tmdb id (exact) or title+year (fallback). */
   data class CollectionPart(val tmdbId: String, val title: String, val year: String?)
 
+  /** A title a person is credited on — enough for the channel to spot it among a catalogue
+   *  search's results, which carry no tmdb id: Italian title, year, movie or series. */
+  data class PersonCredit(val title: String, val year: Int?, val isSeries: Boolean)
+
+  /** Cache entry for [personCredits]: null credits = "no person by that exact name". */
+  private class PersonLookup(val credits: List<PersonCredit>?)
+
   private const val API_BASE = "https://api.themoviedb.org/3"
   private const val SITE_BASE = "https://www.themoviedb.org"
   @Volatile private var apiKey = BuildConfig.TMDB_API_KEY
@@ -52,6 +62,7 @@ object Tmdb {
   private val seasonCache = ConcurrentHashMap<String, String>()
   private val seasonYearsCache = ConcurrentHashMap<String, Map<Int, String>>()
   private val collectionCache = ConcurrentHashMap<String, List<CollectionPart>>()
+  private val personCache = ConcurrentHashMap<String, PersonLookup>()
 
   /** True when an API key is set — the scrape path always works, so this is just "use the nicer one". */
   val usingApi: Boolean
@@ -222,6 +233,84 @@ object Tmdb {
       t.takeIf { it.isNotBlank() }?.let { CollectionPart(pid, it, null) }
     }
   }
+
+  /**
+   * What the person called [name] directed or appeared in — null when TMDB's best match for [name]
+   * isn't a person of exactly that name (so a two-word title search like "harry potter" is never
+   * taken for one) or the lookup failed. Directing counts only as "Regista": TMDB's Direzione
+   * department also lists assistant and second-unit work, which the catalogue's own credits don't
+   * show ("trova anche altri film dove sergio leone non appare tra registi"). Acting counts in full
+   * — documentaries about a director list them as themselves. Cached per name for the session,
+   * "not a person" included; a failed lookup is not cached.
+   */
+  suspend fun personCredits(name: String): List<PersonCredit>? {
+    val key = personKey(name)
+    if (key.isBlank()) return null
+    personCache[key]?.let { return it.credits }
+    val credits = runCatching { if (usingApi) apiPersonCredits(name, key) else scrapePersonCredits(name, key) }.getOrElse { return null }
+    personCache[key] = PersonLookup(credits)
+    return credits
+  }
+
+  private suspend fun apiPersonCredits(name: String, key: String): List<PersonCredit>? {
+    val q = URLEncoder.encode(name.trim(), "UTF-8")
+    val results = JSONObject(Net.get("$API_BASE/search/person?api_key=$apiKey&language=it-IT&query=$q")).optJSONArray("results")
+    val person = results?.optJSONObject(0) ?: return null
+    if (personKey(person.optString("name")) != key) return null
+    val combined = JSONObject(Net.get("$API_BASE/person/${person.optInt("id")}/combined_credits?api_key=$apiKey&language=it-IT"))
+    fun credits(arr: JSONArray?, keep: (JSONObject) -> Boolean): List<PersonCredit> =
+      (0 until (arr?.length() ?: 0)).mapNotNull { i ->
+        val c = arr!!.getJSONObject(i)
+        if (!keep(c)) return@mapNotNull null
+        val isSeries = c.optString("media_type") == "tv"
+        val title = c.optString(if (isSeries) "name" else "title").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        val year = c.optString(if (isSeries) "first_air_date" else "release_date").take(4).toIntOrNull()
+        PersonCredit(title, year, isSeries)
+      }
+    return credits(combined.optJSONArray("cast")) { true } + credits(combined.optJSONArray("crew")) { it.optString("job") == "Director" }
+  }
+
+  // Keyless: the person search page lists matches most popular first ("Sergio Leone" the director
+  // ahead of his namesakes), each as <a href="/person/4385-sergio-leone?…" title="Sergio Leone">.
+  // The person page then server-renders one credits table per department under an <h3>, each row
+  // "year · <a class="tooltip" href="/movie/391-…"><bdi>Title</bdi></a> … job".
+  private suspend fun scrapePersonCredits(name: String, key: String): List<PersonCredit>? {
+    val q = URLEncoder.encode(name.trim(), "UTF-8")
+    val match = PERSON_LINK.find(Net.get("$SITE_BASE/search/person?query=$q&language=it-IT")) ?: return null
+    if (personKey(Parser.unescapeEntities(match.groupValues[2], true)) != key) return null
+    val page = Net.get("$SITE_BASE/person/${match.groupValues[1]}?language=it-IT")
+    val headings = CREDIT_HEADING.findAll(page).toList()
+    val credits = mutableListOf<PersonCredit>()
+    headings.forEachIndexed { i, heading ->
+      val department = heading.groupValues[1].trim()
+      if (department != "Direzione" && department != "Recitazione") return@forEachIndexed
+      val section = page.substring(heading.range.last + 1, headings.getOrNull(i + 1)?.range?.first ?: page.length)
+      for (row in CREDIT_ROW.findAll(section)) {
+        val html = row.groupValues[1]
+        val link = CREDIT_LINK.find(html) ?: continue
+        if (department == "Direzione") {
+          val jobs = Parser.unescapeEntities(html.replace(TAG, " "), false).split('…').drop(1).map { it.trim() }
+          if ("Regista" !in jobs) continue
+        }
+        val title = Parser.unescapeEntities(link.groupValues[3].trim(), false)
+        credits += PersonCredit(title, CREDIT_YEAR.find(html)?.groupValues?.get(1)?.toIntOrNull(), isSeries = link.groupValues[1] == "tv")
+      }
+    }
+    return credits
+  }
+
+  /** Accent-, case- and punctuation-insensitive form of a person's name, for "is this exactly them". */
+  private fun personKey(name: String): String =
+    Normalizer.normalize(name, Normalizer.Form.NFD).replace(DIACRITICS, "").lowercase().replace(NON_ALNUM, " ").trim()
+
+  private val PERSON_LINK = Regex("""href="/person/(\d+-[^"?]+)[^"]*"\s+title="([^"]+)"""")
+  private val CREDIT_HEADING = Regex("""<h3[^>]*>([^<]{2,40})</h3>""")
+  private val CREDIT_ROW = Regex("""<tr>(.*?)</tr>""", RegexOption.DOT_MATCHES_ALL)
+  private val CREDIT_LINK = Regex("""<a class="tooltip" href="/(movie|tv)/(\d+)[^"]*"[^>]*>\s*<bdi>([^<]+)</bdi>""")
+  private val CREDIT_YEAR = Regex("""<td class="year">\s*(\d{4})""")
+  private val TAG = Regex("<[^>]+>")
+  private val DIACRITICS = Regex("\\p{M}+")
+  private val NON_ALNUM = Regex("[^a-z0-9]+")
 
   /** Best YouTube clip: a real "Trailer" beats a teaser/clip, Italian beats other languages, and
    *  an official upload beats a fan mirror — summed so the ordering degrades gracefully when a
