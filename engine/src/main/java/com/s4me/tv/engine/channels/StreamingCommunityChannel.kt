@@ -486,10 +486,15 @@ class StreamingCommunityChannel : Channel {
    * The site's search is a fuzzy STEM match: `q=matrix` returns the 4 real Matrix films and then
    * ~55 "Matrimonio…"/"Matriarch"/"Matricola" titles sharing only the "matri" stem ("matrix ha
    * dato un sacco di titoli"). Re-rank by how the query sits in the TITLE — exact, whole-word
-   * prefix, whole word, bare substring — and once any of those solid tiers has a hit, drop the
-   * long tail the site matched on a stem / plot / cast name instead of the title. Stable sort, so
-   * inside a tier the site's own ordering is kept. A query that hits no title at all (a person
-   * name like "Gal Gadot") lands entirely in the last tier and is returned untouched, which is
+   * prefix, whole word, bare substring — and drop the long tail the site matched on a stem / plot /
+   * cast name instead of the title, but only where that tail is noise: a one-word query with a
+   * solid title hit (the stem case above), or any query a title matches exactly. Stable sort, so
+   * inside a tier the site's own ordering is kept.
+   *
+   * A longer query that merely sits inside a title is usually a person, and for a person the tail
+   * is the answer: "Sergio Leone" hits one title (a documentary about him), while the site returns
+   * his six films as #4–#9, matched on the director — dropping the tail left only the documentary
+   * ("non trova film di Sergio Leone"). Those keep everything, title matches first, which is also
    * what the person-search verification path downstream needs.
    */
   private fun rankByRelevance(query: String, items: List<StreamItem>): List<StreamItem> {
@@ -511,8 +516,8 @@ class StreamingCommunityChannel : Channel {
     // so for those keep only exact / whole-word matches.
     val keep = if (q.length <= 3) 2 else 3
     val scored = items.map { it to tier(it.title) }
-    val solid = scored.any { it.second <= keep }
-    return scored.filter { !solid || it.second <= keep }.sortedBy { it.second }.map { it.first }
+    val dropTail = scored.any { it.second == 0 } || (!q.contains(' ') && scored.any { it.second <= keep })
+    return scored.filter { !dropTail || it.second <= keep }.sortedBy { it.second }.map { it.first }
   }
 
   // --- shared helpers -----------------------------------------------------------------------
