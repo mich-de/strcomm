@@ -2,6 +2,7 @@ package com.s4me.tv.client.ui.player
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.view.View
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -81,11 +82,15 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
+import androidx.media3.common.text.Cue
+import androidx.media3.common.text.CueGroup
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.SubtitleView
 import coil3.compose.AsyncImage
 import com.s4me.tv.client.R
 import com.s4me.tv.client.download.LOCAL_SERVER_ID
@@ -110,7 +115,20 @@ private const val SEEK_MS = 10_000L
 private const val NEXT_UP_LOOKAHEAD_MS = 20_000L
 private const val NEXT_UP_SWAP_MS = 300L
 
+/** Subtitle baseline above the screen's bottom edge, as a fraction of its height (SubtitleView's own
+ *  default is 0.08). */
+private const val SUBTITLE_BOTTOM_PADDING = 0.11f
+
+/** A text cue without its own vertical placement, so [SUBTITLE_BOTTOM_PADDING] decides where it sits:
+ *  SubtitleView ignores the bottom padding for cues that carry a line position (WebVTT `line:`), and
+ *  those were drawn hugging the bottom edge — of the zoomed video in "Riempi", i.e. off-screen. Image
+ *  cues keep their placement. */
+@androidx.annotation.OptIn(UnstableApi::class)
+private fun atSubtitleBaseline(cue: Cue): Cue =
+  if (cue.bitmap != null) cue else cue.buildUpon().setLine(Cue.DIMEN_UNSET, Cue.TYPE_UNSET).setLineAnchor(Cue.TYPE_UNSET).build()
+
 @OptIn(ExperimentalMaterial3Api::class)
+@androidx.annotation.OptIn(UnstableApi::class) // resize modes and the subtitle layer below
 @Composable
 fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modifier) {
   val context = LocalContext.current
@@ -194,6 +212,7 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
   var speed by remember { mutableFloatStateOf(1f) }
   var stats by remember { mutableStateOf(PlaybackStats()) }
   var playerView by remember { mutableStateOf<PlayerView?>(null) }
+  var subtitleOverlay by remember { mutableStateOf<SubtitleView?>(null) }
   var errorRetries by remember(activeItem.url) { mutableIntStateOf(0) }
   var seekFlash by remember { mutableStateOf<SeekFlash?>(null) }
 
@@ -206,6 +225,18 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
   // the player (however it happens — back, an error, the screen finishing) can't leave a stale
   // "available" flag that pops PiP the next time some OTHER screen goes to the background.
   LaunchedEffect(isPlaying) { PipController.setAvailable(isPlaying) }
+
+  // Feeds the screen-sized subtitle layer (see the second AndroidView below) from the player.
+  DisposableEffect(exoPlayer, subtitleOverlay) {
+    val overlay = subtitleOverlay ?: return@DisposableEffect onDispose {}
+    val cueListener =
+      object : Player.Listener {
+        override fun onCues(cueGroup: CueGroup) = overlay.setCues(cueGroup.cues.map(::atSubtitleBaseline))
+      }
+    overlay.setCues(exoPlayer.currentCues.cues.map(::atSubtitleBaseline))
+    exoPlayer.addListener(cueListener)
+    onDispose { exoPlayer.removeListener(cueListener) }
+  }
 
   DisposableEffect(exoPlayer) {
     val listener =
@@ -391,6 +422,8 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
           .apply {
             player = exoPlayer
             keepScreenOn = true
+            // Subtitles are drawn by the screen-sized layer below instead — see there.
+            subtitleView?.visibility = View.GONE
           }
           .also { playerView = it }
       },
@@ -398,6 +431,25 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
         it.player = exoPlayer
         it.resizeMode =
           if (fillScreen) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
+      },
+    )
+
+    // Subtitles on their own layer, exactly the size of the screen. PlayerView draws its own inside
+    // the video's content frame, and "Riempi" (RESIZE_MODE_ZOOM) grows that frame past the screen
+    // edges to crop-to-fill — the subtitles went with it, off the bottom ("quando premo riempi i
+    // sottotitoli sono fuori schermo"). This layer ignores the video's scaling; the player feeds it
+    // cues (the DisposableEffect above), and it sits a little higher than SubtitleView's default 8%
+    // ("devono andare un po' più su"). Style and size follow the system caption settings.
+    AndroidView(
+      modifier = Modifier.fillMaxSize(),
+      factory = { ctx ->
+        SubtitleView(ctx)
+          .apply {
+            setUserDefaultStyle()
+            setUserDefaultTextSize()
+            setBottomPaddingFraction(SUBTITLE_BOTTOM_PADDING)
+          }
+          .also { subtitleOverlay = it }
       },
     )
 
@@ -473,7 +525,11 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
               speed = nextSpeed(speed)
               touched()
             }
-            ControlButton(icon = ImageVector.vectorResource(R.drawable.ic_ms_aspect_ratio), label = if (fillScreen) "Riempi" else "Adatta") { fillScreen = !fillScreen; touched() }
+            // Labelled with what a tap does, not the current mode ("adatta e riempi sono invertiti").
+            ControlButton(
+              icon = ImageVector.vectorResource(if (fillScreen) R.drawable.ic_ms_fit_screen else R.drawable.ic_ms_zoom_out_map),
+              label = if (fillScreen) "Adatta" else "Riempi",
+            ) { fillScreen = !fillScreen; touched() }
             ControlButton(icon = ImageVector.vectorResource(R.drawable.ic_ms_info), label = "Info", active = showInfo) { showInfo = !showInfo; touched() }
             ControlButton(icon = ImageVector.vectorResource(R.drawable.ic_ms_lock), label = "Blocca") { locked = true; controlsVisible = false }
           }
