@@ -105,11 +105,16 @@ private fun WideTopBar(selectedTab: Int, onSelect: (Int) -> Unit) {
             contentColor = if (selected) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.clickable { onSelect(i) },
           ) {
-            Text(
-              text = t.label,
-              style = MaterialTheme.typography.labelLarge,
+            // Same symbols as the bottom bar, filled when selected ("intendevo le icone home, cerca,
+            // sfoglia, impostazioni"), so the wide layout isn't text-only.
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(8.dp),
               modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
+            ) {
+              Symbol(if (selected) t.selectedIcon else t.icon, size = 20.dp)
+              Text(text = t.label, style = MaterialTheme.typography.labelLarge)
+            }
           }
         }
       }

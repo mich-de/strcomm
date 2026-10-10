@@ -27,6 +27,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -60,6 +61,7 @@ import com.s4me.tv.client.ui.components.ErrorScreen
 import com.s4me.tv.client.ui.components.LoadingScreen
 import com.s4me.tv.client.ui.components.PosterCard
 import com.s4me.tv.client.ui.components.RankedPosterCard
+import com.s4me.tv.client.ui.components.Symbol
 import com.s4me.tv.client.ui.components.SymbolLabel
 import com.s4me.tv.engine.GenreOption
 import com.s4me.tv.engine.HomeSection
@@ -268,10 +270,10 @@ private fun TypeFilterRow(docGenreId: Int?, onOpenBrowse: (String) -> Unit) {
     horizontalArrangement = Arrangement.spacedBy(8.dp),
     modifier = Modifier.padding(top = 8.dp),
   ) {
-    item { AssistChip(onClick = { onOpenBrowse("type=movie") }, label = { Text("Film") }) }
-    item { AssistChip(onClick = { onOpenBrowse("type=tv") }, label = { Text("Serie TV") }) }
+    item { AssistChip(onClick = { onOpenBrowse("type=movie") }, label = { Text("Film") }, leadingIcon = { Symbol(R.drawable.ic_ms_movie, size = AssistChipDefaults.IconSize) }) }
+    item { AssistChip(onClick = { onOpenBrowse("type=tv") }, label = { Text("Serie TV") }, leadingIcon = { Symbol(R.drawable.ic_ms_tv, size = AssistChipDefaults.IconSize) }) }
     if (docGenreId != null) {
-      item { AssistChip(onClick = { onOpenBrowse("genre=$docGenreId") }, label = { Text("Documentari") }) }
+      item { AssistChip(onClick = { onOpenBrowse("genre=$docGenreId") }, label = { Text("Documentari") }, leadingIcon = { Symbol(R.drawable.ic_ms_public, size = AssistChipDefaults.IconSize) }) }
     }
   }
 }
