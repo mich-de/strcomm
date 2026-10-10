@@ -25,26 +25,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AspectRatio
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Forward10
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Replay10
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -71,10 +58,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -101,6 +90,7 @@ import coil3.compose.AsyncImage
 import com.s4me.tv.client.R
 import com.s4me.tv.client.download.LOCAL_SERVER_ID
 import com.s4me.tv.client.player.PipController
+import com.s4me.tv.client.ui.components.Symbol
 import com.s4me.tv.engine.ChannelRegistry
 import com.s4me.tv.engine.DESKTOP_UA
 import com.s4me.tv.engine.ItemKind
@@ -439,7 +429,7 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
           modifier = Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          RoundIconButton(icon = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Indietro", onClick = onBack)
+          RoundIconButton(icon = ImageVector.vectorResource(R.drawable.ic_ms_arrow_back), contentDescription = "Indietro", onClick = onBack)
           Spacer(Modifier.width(14.dp))
           InfoBlock(item = activeItem, modifier = Modifier.weight(1f))
         }
@@ -450,11 +440,11 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
           horizontalArrangement = Arrangement.spacedBy(44.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          RoundIconButton(icon = Icons.Filled.Replay10, contentDescription = "Indietro 10 secondi", size = 56.dp, iconSize = 30.dp, background = Color.Transparent) {
+          RoundIconButton(icon = ImageVector.vectorResource(R.drawable.ic_ms_replay_10), contentDescription = "Indietro 10 secondi", size = 56.dp, iconSize = 30.dp, background = Color.Transparent) {
             seekBy(-SEEK_MS)
           }
           RoundIconButton(
-            icon = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+            icon = if (isPlaying) ImageVector.vectorResource(R.drawable.ic_ms_pause_fill) else ImageVector.vectorResource(R.drawable.ic_ms_play_arrow_fill),
             contentDescription = if (isPlaying) "Pausa" else "Riproduci",
             size = 80.dp,
             iconSize = 38.dp,
@@ -463,7 +453,7 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
             exoPlayer.playWhenReady = !exoPlayer.playWhenReady
             touched()
           }
-          RoundIconButton(icon = Icons.Filled.Forward10, contentDescription = "Avanti 10 secondi", size = 56.dp, iconSize = 30.dp, background = Color.Transparent) {
+          RoundIconButton(icon = ImageVector.vectorResource(R.drawable.ic_ms_forward_10), contentDescription = "Avanti 10 secondi", size = 56.dp, iconSize = 30.dp, background = Color.Transparent) {
             seekBy(SEEK_MS)
           }
         }
@@ -474,18 +464,18 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(20.dp),
           ) {
-            ControlButton(icon = Icons.Filled.Subtitles, label = "Audio e CC") {
+            ControlButton(icon = ImageVector.vectorResource(R.drawable.ic_ms_subtitles), label = "Audio e CC") {
               tracks = exoPlayer.currentTracks
               showTracks = true
               touched()
             }
-            ControlButton(icon = Icons.Filled.Speed, label = if (speed == 1f) "1×" else "${speed.toString().removeSuffix(".0")}×") {
+            ControlButton(icon = ImageVector.vectorResource(R.drawable.ic_ms_speed), label = if (speed == 1f) "1×" else "${speed.toString().removeSuffix(".0")}×") {
               speed = nextSpeed(speed)
               touched()
             }
-            ControlButton(icon = Icons.Filled.AspectRatio, label = if (fillScreen) "Riempi" else "Adatta") { fillScreen = !fillScreen; touched() }
-            ControlButton(icon = Icons.Filled.Info, label = "Info", active = showInfo) { showInfo = !showInfo; touched() }
-            ControlButton(icon = Icons.Filled.Lock, label = "Blocca") { locked = true; controlsVisible = false }
+            ControlButton(icon = ImageVector.vectorResource(R.drawable.ic_ms_aspect_ratio), label = if (fillScreen) "Riempi" else "Adatta") { fillScreen = !fillScreen; touched() }
+            ControlButton(icon = ImageVector.vectorResource(R.drawable.ic_ms_info), label = "Info", active = showInfo) { showInfo = !showInfo; touched() }
+            ControlButton(icon = ImageVector.vectorResource(R.drawable.ic_ms_lock), label = "Blocca") { locked = true; controlsVisible = false }
           }
 
           Box(modifier = Modifier.fillMaxWidth()) {
@@ -573,7 +563,7 @@ private fun SeekFlashBubble(forward: Boolean, modifier: Modifier = Modifier) {
     verticalArrangement = Arrangement.Center,
   ) {
     Icon(
-      imageVector = if (forward) Icons.Filled.Forward10 else Icons.Filled.Replay10,
+      imageVector = if (forward) ImageVector.vectorResource(R.drawable.ic_ms_forward_10) else ImageVector.vectorResource(R.drawable.ic_ms_replay_10),
       contentDescription = null,
       tint = Color.White,
       modifier = Modifier.size(32.dp),
@@ -634,7 +624,7 @@ private fun LockAffordance(locked: Boolean, modifier: Modifier = Modifier, onCli
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(8.dp),
   ) {
-    Icon(imageVector = if (locked) Icons.Filled.LockOpen else Icons.Filled.Lock, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+    Icon(imageVector = if (locked) ImageVector.vectorResource(R.drawable.ic_ms_lock_open) else ImageVector.vectorResource(R.drawable.ic_ms_lock), contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
     Text(if (locked) "Sblocca" else "Blocca", style = MaterialTheme.typography.labelLarge, color = Color.White)
   }
 }
@@ -685,7 +675,7 @@ private fun InfoPanel(item: StreamItem, stats: PlaybackStats, bufferedAheadMs: L
         style = MaterialTheme.typography.labelSmall,
         color = Color.White.copy(alpha = 0.5f),
       )
-      RoundIconButton(icon = Icons.Filled.Close, contentDescription = "Chiudi", size = 32.dp, iconSize = 16.dp, onClick = onClose)
+      RoundIconButton(icon = ImageVector.vectorResource(R.drawable.ic_ms_close), contentDescription = "Chiudi", size = 32.dp, iconSize = 16.dp, onClick = onClose)
     }
 
     Spacer(Modifier.height(16.dp))
@@ -760,7 +750,7 @@ private fun NextUpCard(next: StreamItem, secondsLeft: Int, onPlayNow: () -> Unit
         modifier = Modifier.align(Alignment.Center).size(52.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.22f)),
         contentAlignment = Alignment.Center,
       ) {
-        Icon(imageVector = Icons.Filled.PlayArrow, contentDescription = "Riproduci ora", tint = Color.White, modifier = Modifier.size(26.dp))
+        Icon(imageVector = ImageVector.vectorResource(R.drawable.ic_ms_play_arrow_fill), contentDescription = "Riproduci ora", tint = Color.White, modifier = Modifier.size(26.dp))
       }
       Text(
         "$secondsLeft",
@@ -896,7 +886,10 @@ private fun nextSpeed(cur: Float): Float {
 @Composable
 private fun TrackLine(label: String, selected: Boolean, onClick: () -> Unit) {
   TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
-    Text((if (selected) "✓  " else "     ") + label, modifier = Modifier.fillMaxWidth())
+    // A fixed-width slot, so labels line up whether or not a row carries the check.
+    Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { if (selected) Symbol(R.drawable.ic_ms_check, size = 20.dp) }
+    Spacer(Modifier.width(12.dp))
+    Text(label, modifier = Modifier.weight(1f))
   }
 }
 

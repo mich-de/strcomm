@@ -23,6 +23,9 @@ android {
     targetSdk = 36
     versionCode = 1
     versionName = "1.0.0"
+    // Real phones and tablets only: x86/x86_64 are emulator ABIs. 32-bit ARM stays for older phones
+    // (the S25 Edge, like every device this is used on, is arm64-only).
+    ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
   }
 
   signingConfigs {
@@ -38,7 +41,10 @@ android {
 
   buildTypes {
     release {
-      isMinifyEnabled = false
+      // R8: shrinks ~53 MB of unoptimised dex (mostly the full Material icon set) to the code the app
+      // actually reaches, and optimises it — less to load and verify at startup, less memory.
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       if (keystorePropertiesFile.exists()) signingConfig = signingConfigs.getByName("release")
     }
@@ -79,7 +85,6 @@ dependencies {
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.compose.material3)
-  implementation(libs.androidx.compose.material.icons.extended)
   debugImplementation(libs.androidx.compose.ui.tooling)
 
   implementation(libs.androidx.navigation3.runtime)

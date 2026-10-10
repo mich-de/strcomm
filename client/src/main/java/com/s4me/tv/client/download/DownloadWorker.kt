@@ -45,7 +45,7 @@ const val KEY_PROGRESS = "progress"
 const val KEY_ERROR = "error"
 private val json = Json { ignoreUnknownKeys = true }
 
-/** Entry points for the "⬇ Scarica" button and the downloads screen. One unique work per title,
+/** Entry points for the "Scarica" button and the downloads screen. One unique work per title,
  *  so tapping twice never starts a second copy. */
 object Downloads {
   const val TAG = "strcomm-download"

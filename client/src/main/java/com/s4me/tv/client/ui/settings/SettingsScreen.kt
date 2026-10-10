@@ -32,11 +32,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.s4me.tv.client.R
 import com.s4me.tv.client.notifications.NewReleaseWorker
 import com.s4me.tv.client.sync.ProgressSyncPreference
 import com.s4me.tv.client.sync.ProgressSyncWorker
 import com.s4me.tv.client.theme.ThemeMode
 import com.s4me.tv.client.theme.ThemePreference
+import com.s4me.tv.client.ui.components.SymbolLabel
 import com.s4me.tv.engine.BackupManager
 import com.s4me.tv.engine.CacheUtil
 import com.s4me.tv.engine.NewReleaseStore
@@ -113,14 +115,14 @@ fun SettingsScreen(
     Text("Impostazioni", style = MaterialTheme.typography.headlineSmall)
     val version = remember { appVersionName(context) }
     Text("StrComm $version · $PERSONAL_USE_NOTICE", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    FilledTonalButton(onClick = onOpenTvGuide) { Text("📺  Guida TV completa") }
-    FilledTonalButton(onClick = onOpenCustomLists) { Text("📋  Le mie liste personalizzate") }
-    FilledTonalButton(onClick = onOpenDownloads) { Text("⬇  I miei download") }
+    FilledTonalButton(onClick = onOpenTvGuide) { SymbolLabel(R.drawable.ic_ms_live_tv, "Guida TV completa") }
+    FilledTonalButton(onClick = onOpenCustomLists) { SymbolLabel(R.drawable.ic_ms_list_alt, "Le mie liste personalizzate") }
+    FilledTonalButton(onClick = onOpenDownloads) { SymbolLabel(R.drawable.ic_ms_download, "I miei download") }
 
     Text("Dati personali, salvati solo su questo dispositivo.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
-    FilledTonalButton(onClick = { progress.clearAll() }) { Text("🗑  Svuota «Continua a guardare»") }
-    FilledTonalButton(onClick = { watchlist.clearAll() }) { Text("🗑  Svuota «La mia lista»") }
-    FilledTonalButton(onClick = { history.clear() }) { Text("🗑  Cancella cronologia ricerche") }
+    FilledTonalButton(onClick = { progress.clearAll() }) { SymbolLabel(R.drawable.ic_ms_delete, "Svuota «Continua a guardare»") }
+    FilledTonalButton(onClick = { watchlist.clearAll() }) { SymbolLabel(R.drawable.ic_ms_delete, "Svuota «La mia lista»") }
+    FilledTonalButton(onClick = { history.clear() }) { SymbolLabel(R.drawable.ic_ms_delete, "Cancella cronologia ricerche") }
     FilledTonalButton(
       onClick = {
         clearingCache = true
@@ -135,7 +137,7 @@ fun SettingsScreen(
       },
       enabled = !clearingCache,
     ) {
-      Text(if (clearingCache) "Pulizia in corso…" else "🧹  Pulisci cache (${CacheUtil.formatSize(cacheBytes)})")
+      if (clearingCache) Text("Pulizia in corso…") else SymbolLabel(R.drawable.ic_ms_cleaning_services, "Pulisci cache (${CacheUtil.formatSize(cacheBytes)})")
     }
 
     Text("Tema", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
@@ -250,8 +252,8 @@ fun SettingsScreen(
       color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-      FilledTonalButton(onClick = { exportLauncher.launch("strcomm-backup.json") }) { Text("⬆  Esporta") }
-      FilledTonalButton(onClick = { importLauncher.launch(arrayOf("application/json")) }) { Text("⬇  Ripristina") }
+      FilledTonalButton(onClick = { exportLauncher.launch("strcomm-backup.json") }) { SymbolLabel(R.drawable.ic_ms_upload, "Esporta") }
+      FilledTonalButton(onClick = { importLauncher.launch(arrayOf("application/json")) }) { SymbolLabel(R.drawable.ic_ms_download, "Ripristina") }
     }
 
     Text("StrComm — client touch. Streaming da un unico sito di terze parti.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp))

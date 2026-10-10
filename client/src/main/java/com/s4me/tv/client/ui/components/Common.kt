@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,6 +30,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.s4me.tv.client.R
 import com.s4me.tv.engine.ItemKind
 import com.s4me.tv.engine.StreamItem
 
@@ -49,12 +52,14 @@ fun ErrorScreen(message: String, onRetry: (() -> Unit)? = null, modifier: Modifi
   ) {
     Text(message, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
     if (onRetry != null) {
-      Text(
-        "↻  Riprova",
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.primary,
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(top = 16.dp).clip(RoundedCornerShape(50)).clickable(onClick = onRetry).padding(horizontal = 20.dp, vertical = 10.dp),
-      )
+      ) {
+        Symbol(R.drawable.ic_ms_refresh, tint = MaterialTheme.colorScheme.primary, size = 20.dp)
+        Spacer(Modifier.width(8.dp))
+        Text("Riprova", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+      }
     }
   }
 }

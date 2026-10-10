@@ -287,8 +287,10 @@ a run of failed pings drops back to discovery.
 - **Custom player** (`ui/player/PlayerScreen.kt`): tap toggles a Netflix-style overlay (back +
   compact `InfoBlock`, centre transport, bottom control row + a buffered-aware scrubber); double-tap
   edges seek ±10 s and flash a `SeekFlashBubble` (auto-dismisses after 650 ms — there was previously
-  no feedback at all for a double-tap seek). Every control is a real `material-icons-extended` glyph,
-  not a Unicode/emoji character — `libs.androidx.compose.material.icons.extended`, `:client` only.
+  no feedback at all for a double-tap seek). Every control — like every icon in `:client` — is a
+  Material Symbols Rounded vector (`res/drawable/ic_ms_*.xml`, via `Symbol` / `SymbolLabel` in
+  `ui/components/Symbols.kt`), not a Unicode/emoji glyph or the old Material Icons set
+  ("le icone non sono moderne"); `material-icons-extended` is no longer a dependency.
   Control row: **Audio e CC** (`ModalBottomSheet` → `TrackSheet`), **Velocità** (0.5–2×),
   **Adatta / Riempi** (see gotcha), **Info**, **Blocca**. The scrubber is a `Slider` with
   `inactiveTrackColor = Transparent` layered over a plain `Box` painting the buffered fraction

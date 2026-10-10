@@ -42,8 +42,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
+import com.s4me.tv.client.R
 import com.s4me.tv.client.ui.components.EpisodeRow
 import com.s4me.tv.client.ui.components.LoadingScreen
+import com.s4me.tv.client.ui.components.SymbolLabel
 import com.s4me.tv.engine.StreamItem
 import com.s4me.tv.engine.WatchlistStore
 import com.s4me.tv.engine.youtubeVideoId
@@ -144,10 +146,10 @@ private fun SeriesHeader(info: StreamItem) {
       }
       Row(modifier = Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         FilledTonalButton(onClick = { inList = watchlist.toggle(info) }) {
-          Text(if (inList) "✓  Nella lista" else "＋  La mia lista")
+          SymbolLabel(if (inList) R.drawable.ic_ms_check else R.drawable.ic_ms_add, if (inList) "Nella lista" else "La mia lista")
         }
         info.trailerYoutubeId?.let { id ->
-          FilledTonalButton(onClick = { openSeriesTrailer(context, id) }) { Text("▶  Trailer") }
+          FilledTonalButton(onClick = { openSeriesTrailer(context, id) }) { SymbolLabel(R.drawable.ic_ms_movie, "Trailer") }
         }
       }
       info.plot?.let { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 4, modifier = Modifier.padding(top = 12.dp)) }

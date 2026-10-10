@@ -5,9 +5,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -29,7 +32,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.s4me.tv.client.R
 import com.s4me.tv.client.ui.components.PosterCard
+import com.s4me.tv.client.ui.components.Symbol
 import com.s4me.tv.engine.StreamItem
 
 @Composable
@@ -69,13 +74,17 @@ fun SearchScreen(
           Column {
             Text("Ricerche recenti", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(vertical = 8.dp))
             s.history.forEach { h ->
-              Text(
-                "🕑   $h",
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().clickable {
                   query = h
                   viewModel.search(h)
                 }.padding(vertical = 12.dp),
-              )
+              ) {
+                Symbol(R.drawable.ic_ms_history, tint = MaterialTheme.colorScheme.onSurfaceVariant, size = 20.dp)
+                Spacer(Modifier.width(16.dp))
+                Text(h)
+              }
             }
             Text(
               "Cancella cronologia",

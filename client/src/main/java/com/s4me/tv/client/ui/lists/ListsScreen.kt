@@ -17,9 +17,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,8 +32,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
+import com.s4me.tv.client.R
 import com.s4me.tv.client.ui.components.ErrorScreen
 import com.s4me.tv.client.ui.components.PosterCard
 import com.s4me.tv.engine.CustomListsStore
@@ -56,7 +56,7 @@ fun CustomListsScreen(onOpenList: (String) -> Unit, onBack: () -> Unit, modifier
       modifier = Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 8.dp, vertical = 4.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Indietro") }
+      IconButton(onClick = onBack) { Icon(ImageVector.vectorResource(R.drawable.ic_ms_arrow_back), contentDescription = "Indietro") }
       Text("Le mie liste", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
       TextButton(onClick = { showCreateDialog = true }) { Text("+ Nuova") }
     }
@@ -127,7 +127,7 @@ fun CustomListDetailScreen(listId: String, onOpen: (StreamItem) -> Unit, onBack:
       modifier = Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 8.dp, vertical = 4.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Indietro") }
+      IconButton(onClick = onBack) { Icon(ImageVector.vectorResource(R.drawable.ic_ms_arrow_back), contentDescription = "Indietro") }
       Text(def?.name ?: "Lista", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
       TextButton(onClick = { showDeleteDialog = true }) { Text("Elimina lista") }
     }
@@ -147,7 +147,7 @@ fun CustomListDetailScreen(listId: String, onOpen: (StreamItem) -> Unit, onBack:
               modifier =
                 Modifier.align(Alignment.TopEnd).padding(4.dp).size(28.dp).background(Color.Black.copy(alpha = 0.55f), CircleShape),
             ) {
-              Icon(Icons.Filled.Close, contentDescription = "Rimuovi dalla lista", tint = Color.White, modifier = Modifier.size(16.dp))
+              Icon(ImageVector.vectorResource(R.drawable.ic_ms_close), contentDescription = "Rimuovi dalla lista", tint = Color.White, modifier = Modifier.size(16.dp))
             }
           }
         }

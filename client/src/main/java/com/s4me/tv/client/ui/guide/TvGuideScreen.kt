@@ -17,8 +17,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,13 +28,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.s4me.tv.client.R
 import com.s4me.tv.client.ui.components.ErrorScreen
 import com.s4me.tv.client.ui.components.LoadingScreen
+import com.s4me.tv.client.ui.components.Symbol
 import com.s4me.tv.engine.NowOnItalianTV
 import com.s4me.tv.engine.StreamItem
 
@@ -54,7 +56,7 @@ fun TvGuideScreen(onOpen: (StreamItem) -> Unit, onBack: () -> Unit, modifier: Mo
       modifier = Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 8.dp, vertical = 4.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Indietro") }
+      IconButton(onClick = onBack) { Icon(ImageVector.vectorResource(R.drawable.ic_ms_arrow_back), contentDescription = "Indietro") }
       Text("Guida TV · stasera", style = MaterialTheme.typography.titleLarge)
     }
 
@@ -102,7 +104,7 @@ private fun GuideRow(entry: NowOnItalianTV.Entry, isResolving: Boolean, onClick:
     if (isResolving) {
       CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
     } else {
-      Text("▶", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      Symbol(R.drawable.ic_ms_play_arrow_fill, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
   }
 }

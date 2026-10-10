@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -24,8 +22,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
+import com.s4me.tv.client.R
 import com.s4me.tv.engine.CustomListsStore
 import com.s4me.tv.engine.StreamItem
 
@@ -90,7 +91,7 @@ fun AddToListSheet(item: StreamItem, onDismiss: () -> Unit) {
             newListName = ""
           }
         ) {
-          Icon(Icons.Filled.Add, contentDescription = "Crea lista")
+          Icon(ImageVector.vectorResource(R.drawable.ic_ms_add), contentDescription = "Crea lista")
         }
       }
     }

@@ -23,11 +23,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -44,8 +39,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -53,11 +50,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import coil3.compose.AsyncImage
+import com.s4me.tv.client.R
 import com.s4me.tv.client.download.DownloadRecord
 import com.s4me.tv.client.download.Downloads
 import com.s4me.tv.client.download.DownloadsStore
 import com.s4me.tv.client.download.KEY_ERROR
 import com.s4me.tv.client.download.KEY_PROGRESS
+import com.s4me.tv.client.ui.components.SymbolLabel
 import com.s4me.tv.engine.CacheUtil
 import com.s4me.tv.engine.StreamItem
 
@@ -88,7 +87,7 @@ fun rememberDownloadState(contentId: String): DownloadUiState {
   }
 }
 
-/** "⬇ Scarica" on a movie/episode page: start → progress (tap to cancel) → play offline. */
+/** "Scarica" on a movie/episode page: start → progress (tap to cancel) → play offline. */
 @Composable
 fun DownloadButton(item: StreamItem, onPlayOffline: (StreamItem) -> Unit, modifier: Modifier = Modifier) {
   val context = LocalContext.current
@@ -104,14 +103,14 @@ fun DownloadButton(item: StreamItem, onPlayOffline: (StreamItem) -> Unit, modifi
   }
   Column(modifier = modifier) {
     when (state) {
-      DownloadUiState.None -> FilledTonalButton(onClick = start) { Text("⬇  Scarica") }
+      DownloadUiState.None -> FilledTonalButton(onClick = start) { SymbolLabel(R.drawable.ic_ms_download, "Scarica") }
       is DownloadUiState.Running ->
         FilledTonalButton(onClick = { Downloads.cancel(context, item.url) }) {
-          Text(state.progress?.let { "✕  Annulla download · ${(it * 100).toInt()}%" } ?: "✕  Annulla download")
+          SymbolLabel(R.drawable.ic_ms_close, state.progress?.let { "Annulla download · ${(it * 100).toInt()}%" } ?: "Annulla download")
         }
-      is DownloadUiState.Done -> FilledTonalButton(onClick = { onPlayOffline(state.record.playable()) }) { Text("✓  Guarda offline") }
+      is DownloadUiState.Done -> FilledTonalButton(onClick = { onPlayOffline(state.record.playable()) }) { SymbolLabel(R.drawable.ic_ms_play_circle_fill, "Guarda offline") }
       is DownloadUiState.Failed -> {
-        FilledTonalButton(onClick = start) { Text("⬇  Riprova download") }
+        FilledTonalButton(onClick = start) { SymbolLabel(R.drawable.ic_ms_refresh, "Riprova download") }
         Text(
           state.message,
           style = MaterialTheme.typography.bodySmall,
@@ -141,14 +140,14 @@ fun DownloadsScreen(onPlay: (StreamItem) -> Unit, onBack: () -> Unit, modifier: 
       modifier = Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 8.dp, vertical = 4.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Indietro") }
+      IconButton(onClick = onBack) { Icon(ImageVector.vectorResource(R.drawable.ic_ms_arrow_back), contentDescription = "Indietro") }
       Text("I miei download", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
       if (failed.isNotEmpty()) TextButton(onClick = { workManager.pruneWork() }) { Text("Rimuovi errori") }
     }
 
     if (active.isEmpty() && failed.isEmpty() && records.isEmpty()) {
       Text(
-        "Nessun download.\nApri un film o un episodio e tocca «⬇ Scarica»: il file .mkv — con tutte le lingue e i sottotitoli — finisce in Film/StrComm.",
+        "Nessun download.\nApri un film o un episodio e tocca «Scarica»: il file .mkv — con tutte le lingue e i sottotitoli — finisce in Film/StrComm.",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(24.dp),
@@ -243,13 +242,13 @@ private fun CompletedRow(record: DownloadRecord, onPlay: () -> Unit, onOpenElsew
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
     }
-    IconButton(onClick = onPlay) { Icon(Icons.Filled.PlayArrow, contentDescription = "Guarda") }
+    IconButton(onClick = onPlay) { Icon(ImageVector.vectorResource(R.drawable.ic_ms_play_arrow_fill), contentDescription = "Guarda") }
     // Handing another app a file:// URI throws on Android 7+ — only MediaStore (content://)
     // downloads, i.e. Android 10+, can be opened elsewhere from here.
     if (record.uri.startsWith("content://")) {
-      IconButton(onClick = onOpenElsewhere) { Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Apri con un'altra app") }
+      IconButton(onClick = onOpenElsewhere) { Icon(ImageVector.vectorResource(R.drawable.ic_ms_open_in_new), contentDescription = "Apri con un'altra app") }
     }
-    IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "Elimina") }
+    IconButton(onClick = onDelete) { Icon(ImageVector.vectorResource(R.drawable.ic_ms_delete), contentDescription = "Elimina") }
   }
 }
 

@@ -2,6 +2,7 @@ package com.s4me.tv.client
 
 import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -40,18 +41,19 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import com.s4me.tv.client.nav.Browse
 import com.s4me.tv.client.nav.BrowseRoot
-import com.s4me.tv.client.nav.Detail
-import com.s4me.tv.client.nav.Home
-import com.s4me.tv.client.nav.Player
 import com.s4me.tv.client.nav.CustomListDetail
 import com.s4me.tv.client.nav.CustomLists
+import com.s4me.tv.client.nav.Detail
+import com.s4me.tv.client.nav.Home
 import com.s4me.tv.client.nav.MyDownloads
+import com.s4me.tv.client.nav.Player
 import com.s4me.tv.client.nav.Search
 import com.s4me.tv.client.nav.Settings
 import com.s4me.tv.client.nav.TvGuide
 import com.s4me.tv.client.nav.isWideScreen
 import com.s4me.tv.client.nav.navKeyFor
 import com.s4me.tv.client.ui.browse.BrowseScreen
+import com.s4me.tv.client.ui.components.Symbol
 import com.s4me.tv.client.ui.detail.DetailScreen
 import com.s4me.tv.client.ui.downloads.DownloadsScreen
 import com.s4me.tv.client.ui.guide.TvGuideScreen
@@ -63,14 +65,15 @@ import com.s4me.tv.client.ui.search.SearchScreen
 import com.s4me.tv.client.ui.settings.SettingsScreen
 import com.s4me.tv.engine.ChannelRegistry
 
-private data class TabDest(val label: String, val glyph: String, val root: NavKey)
+/** A top-level tab: [icon] outlined, [selectedIcon] filled — Material 3's navigation pattern. */
+private data class TabDest(val label: String, @DrawableRes val icon: Int, @DrawableRes val selectedIcon: Int, val root: NavKey)
 
 private val TABS =
   listOf(
-    TabDest("Home", "⌂", Home),
-    TabDest("Cerca", "🔍", Search()),
-    TabDest("Sfoglia", "☰", BrowseRoot),
-    TabDest("Impostazioni", "⚙", Settings),
+    TabDest("Home", R.drawable.ic_ms_home, R.drawable.ic_ms_home_fill, Home),
+    TabDest("Cerca", R.drawable.ic_ms_search, R.drawable.ic_ms_search, Search()),
+    TabDest("Sfoglia", R.drawable.ic_ms_explore, R.drawable.ic_ms_explore_fill, BrowseRoot),
+    TabDest("Impostazioni", R.drawable.ic_ms_settings, R.drawable.ic_ms_settings_fill, Settings),
   )
 
 // Tablet/wide-screen top bar — replaces the NavigationRail. A permanent icon+label rail eats a
@@ -154,7 +157,7 @@ fun ClientApp() {
             NavigationBarItem(
               selected = selectedTab == i,
               onClick = { openTab(i) },
-              icon = { Text(t.glyph, style = MaterialTheme.typography.titleMedium) },
+              icon = { Symbol(if (selectedTab == i) t.selectedIcon else t.icon) },
               label = { Text(t.label) },
             )
           }

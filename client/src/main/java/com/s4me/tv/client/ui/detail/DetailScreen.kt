@@ -25,8 +25,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
@@ -43,15 +41,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
+import com.s4me.tv.client.R
 import com.s4me.tv.client.ui.components.ErrorScreen
 import com.s4me.tv.client.ui.components.PosterCard
+import com.s4me.tv.client.ui.components.SymbolLabel
 import com.s4me.tv.client.ui.downloads.DownloadButton
 import com.s4me.tv.client.ui.lists.AddToListSheet
 import com.s4me.tv.engine.StreamItem
@@ -175,25 +177,25 @@ private fun PlayActions(
   // the trailer sits with the actions rather than below the plot, keeping the poster taller.
   FlowRow(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
     if (resumeMs != null && resumeMs > 0) {
-      Button(onClick = { ready?.let(onPlay) }, enabled = ready != null) { Text("▶  Riprendi · ${formatTime(resumeMs)}") }
+      Button(onClick = { ready?.let(onPlay) }, enabled = ready != null) { SymbolLabel(R.drawable.ic_ms_play_arrow_fill, "Riprendi · ${formatTime(resumeMs)}") }
       FilledTonalButton(
         onClick = {
           progressStore.remove(item.url)
           ready?.let(onPlay)
         },
         enabled = ready != null,
-      ) { Text("↻  Ricomincia") }
+      ) { SymbolLabel(R.drawable.ic_ms_restart_alt, "Ricomincia") }
     } else {
       Button(onClick = { ready?.let(onPlay) }, enabled = ready != null) {
-        Text(if (state is DetailUiState.Loading) "Caricamento…" else "▶  Guarda")
+        if (state is DetailUiState.Loading) Text("Caricamento…") else SymbolLabel(R.drawable.ic_ms_play_arrow_fill, "Guarda")
       }
     }
-    item.trailerYoutubeId?.let { id -> FilledTonalButton(onClick = { onTrailer(id) }) { Text("▶  Trailer") } }
+    item.trailerYoutubeId?.let { id -> FilledTonalButton(onClick = { onTrailer(id) }) { SymbolLabel(R.drawable.ic_ms_movie, "Trailer") } }
     FilledTonalButton(onClick = { inList = watchlistStore.toggle(item) }) {
-      Text(if (inList) "✓  Nella lista" else "＋  La mia lista")
+      SymbolLabel(if (inList) R.drawable.ic_ms_check else R.drawable.ic_ms_add, if (inList) "Nella lista" else "La mia lista")
     }
     IconButton(onClick = { showListsSheet = true }) {
-      Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Aggiungi a una lista personalizzata")
+      Icon(ImageVector.vectorResource(R.drawable.ic_ms_playlist_add), contentDescription = "Aggiungi a una lista personalizzata")
     }
     DownloadButton(item = item, onPlayOffline = onPlay)
   }

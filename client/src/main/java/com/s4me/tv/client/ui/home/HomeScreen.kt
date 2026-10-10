@@ -54,11 +54,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
+import com.s4me.tv.client.R
 import com.s4me.tv.client.nav.isWideScreen
 import com.s4me.tv.client.ui.components.ErrorScreen
 import com.s4me.tv.client.ui.components.LoadingScreen
 import com.s4me.tv.client.ui.components.PosterCard
 import com.s4me.tv.client.ui.components.RankedPosterCard
+import com.s4me.tv.client.ui.components.SymbolLabel
 import com.s4me.tv.engine.GenreOption
 import com.s4me.tv.engine.HomeSection
 import com.s4me.tv.engine.StreamItem
@@ -169,9 +171,9 @@ private fun HeroPager(heroes: List<StreamItem>, onOpen: (StreamItem) -> Unit) {
           Text(meta, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.85f), modifier = Modifier.padding(top = 4.dp))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 12.dp)) {
-          Button(onClick = { onOpen(hero) }) { Text("▶  Apri") }
+          Button(onClick = { onOpen(hero) }) { SymbolLabel(R.drawable.ic_ms_play_arrow_fill, "Apri") }
           OutlinedButton(onClick = { inList = watchlistStore.toggle(hero) }) {
-            Text(if (inList) "✓  Nella lista" else "＋  La mia lista")
+            SymbolLabel(if (inList) R.drawable.ic_ms_check else R.drawable.ic_ms_add, if (inList) "Nella lista" else "La mia lista")
           }
         }
       }
