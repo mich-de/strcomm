@@ -24,6 +24,7 @@ import com.s4me.tv.client.sync.ProgressSyncWorker
 import com.s4me.tv.client.theme.StrCommClientTheme
 import com.s4me.tv.client.theme.ThemeMode
 import com.s4me.tv.client.theme.ThemePreference
+import com.s4me.tv.client.ui.profiles.EXTRA_PROFILE_CHOSEN
 import com.s4me.tv.client.ui.profiles.ProfilesScreen
 import com.s4me.tv.engine.AvailabilityReminderStore
 import com.s4me.tv.engine.NewReleaseStore
@@ -62,7 +63,9 @@ class MainActivity : ComponentActivity() {
       StrCommClientTheme(dark = dark) {
         // With more than one profile, every launch starts by asking who is watching (stays answered
         // across rotation). A single profile goes straight in.
-        var chosen by rememberSaveable { mutableStateOf(ProfileScope.all(this@MainActivity).size <= 1) }
+        var chosen by rememberSaveable {
+          mutableStateOf(intent?.getBooleanExtra(EXTRA_PROFILE_CHOSEN, false) == true || ProfileScope.all(this@MainActivity).size <= 1)
+        }
         if (chosen) ClientApp() else ProfilesScreen(onPicked = { chosen = true })
       }
     }

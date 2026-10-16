@@ -234,10 +234,17 @@ private fun NameDialog(
   )
 }
 
+/** Marks a launch that already knows who is watching, so the launch gate doesn't ask a second time. */
+const val EXTRA_PROFILE_CHOSEN = "com.s4me.tv.client.PROFILE_CHOSEN"
+
 /** Starts the app afresh in a new task — used after switching profile from inside the app, so every
- *  screen and ViewModel is rebuilt against the new profile's data instead of keeping the old one's. */
+ *  screen and ViewModel is rebuilt against the new profile's data instead of keeping the old one's.
+ *  The person has just picked, so the new launch skips the "Chi sta guardando?" gate. */
 fun restartApp(activity: Activity) {
-  val intent = Intent(activity, activity.javaClass).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+  val intent =
+    Intent(activity, activity.javaClass)
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+      .putExtra(EXTRA_PROFILE_CHOSEN, true)
   activity.startActivity(intent)
   activity.finish()
 }

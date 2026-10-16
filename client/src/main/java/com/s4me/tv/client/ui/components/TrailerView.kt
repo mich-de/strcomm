@@ -16,6 +16,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import kotlin.coroutines.resume
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -46,6 +48,10 @@ fun TrailerView(youtubeId: String, muted: Boolean, onPlaying: () -> Unit, modifi
   var playing by remember(youtubeId) { mutableStateOf(false) }
   DisposableEffect(webView) { onDispose { webView.destroy() } }
   AndroidView(factory = { webView }, modifier = modifier)
+  // A WebView doesn't follow the app's lifecycle by itself: without this, a trailer someone has
+  // unmuted keeps playing its sound after they leave the app.
+  LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { webView.onPause() }
+  LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { webView.onResume() }
 
   // Asks the embedded player every half second whether it is actually playing (state 1).
   LaunchedEffect(webView) {
