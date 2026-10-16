@@ -188,7 +188,14 @@ fun ClientApp() {
               )
             }
             entry<Search> { key ->
-              SearchScreen(onOpen = open, initialQuery = key.initialQuery, isPersonQuery = key.isPersonQuery, modifier = Modifier.fillMaxSize())
+              SearchScreen(
+                onOpen = open,
+                // Same deep link Home's genre chips use: the catalogue filtered by that genre id.
+                onOpenGenre = { id -> catalogRoot?.let { backStack.add(Browse(it.copy(extra = "genre=$id"))) } },
+                initialQuery = key.initialQuery,
+                isPersonQuery = key.isPersonQuery,
+                modifier = Modifier.fillMaxSize(),
+              )
             }
             entry<BrowseRoot> {
               if (catalogRoot != null) {

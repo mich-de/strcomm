@@ -4,8 +4,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.s4me.tv.engine.ChannelRegistry
+import com.s4me.tv.engine.GenreOption
 import com.s4me.tv.engine.ItemKind
 import com.s4me.tv.engine.SearchHistoryStore
+import com.s4me.tv.engine.SiteTraffic
 import com.s4me.tv.engine.StreamItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val WHITESPACE = Regex("\\s+")
 
@@ -36,6 +39,19 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
   val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
   private var job: Job? = null
+
+  /** The catalogue's genres, for the pre-query "Sfoglia per genere" chips and for matching what's being
+   *  typed against genre names. Cached by the channel once Home has loaded; if not yet, this is one
+   *  request, taken in the background lane like every other fill-in fetch. */
+  private val _genres = MutableStateFlow<List<GenreOption>>(emptyList())
+  val genres: StateFlow<List<GenreOption>> = _genres.asStateFlow()
+
+  init {
+    viewModelScope.launch(Dispatchers.IO) {
+      val channel = ChannelRegistry.all.firstOrNull() ?: return@launch
+      _genres.value = withContext(SiteTraffic.Background) { runCatching { channel.genres() }.getOrDefault(emptyList()) }
+    }
+  }
 
   /** Debounced live search — call on every keystroke. */
   fun onQueryChange(query: String) {

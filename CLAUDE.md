@@ -59,6 +59,7 @@ only rating/metadata enrichment scrapes (IMDb, TMDB). See `README.md` for the us
   constraint). AGP 9 auto-applies the Kotlin Android plugin — modules only declare
   `android.application` / `android.library` + `compose.compiler` + `kotlin.serialization`. All
   versions in `gradle/libs.versions.toml`.
+- `:client`'s **release build runs R8** (minify + resource shrinking, no extra keep rules needed; APK 17 MB → 3 MB, one 4.8 MB dex). It takes 2–6 min and is memory-hungry: on this 15 GB box with an IDE open it was OOM-killed (exit 137) until stray Gradle daemons were stopped (`./gradlew --stop`). `:app`/`:mobile` are not minified yet.
 - **No tests.** `app/src/test` + `app/src/androidTest` are empty; there is no `:client` / `:engine`
   test source set. `./gradlew test` is a no-op; `./gradlew check` effectively just runs lint.
 - No ktfmt/spotless/detekt task — the code follows ktfmt *style* by convention only (see below).
@@ -277,7 +278,7 @@ a run of failed pings drops back to discovery.
   filters by country of origin, verified live against the site's own archive-page props, not guessed),
   `SeriesScreen` (Netflix-style — backdrop header, season `FilterChip` row, `EpisodeRow` list; backed
   by `SeriesViewModel`), `DetailScreen` (enriched via `DetailViewModel` — `_preview` renders metadata
-  before `findVideos()` sources resolve), `SearchScreen` (debounced type-ahead), `SettingsScreen`
+  before `findVideos()` sources resolve), `SearchScreen` (one box for "titoli, generi o persone"; debounced type-ahead for titles, plus: before typing — trending titles from `HomeSnapshot` (Home's already-fetched row, so no extra site request), recent searches and genre chips; while typing — genre matches on top; no match — a hint + genres; voice input via the system `RecognizerIntent`, which is why the manifest has a `<queries>` entry; the result count is a live region. Modelled on behaviour read from Netflix's APK — see "Search study" below — not on its code or assets), `SettingsScreen`
   (clears the three stores).
 - **Continue Watching**: `HomeViewModel.personalSections()` normalises any legacy `PLAYABLE` entry
   to a navigable `MOVIE`/`EPISODE` so a tap opens Detail and re-resolves a fresh stream.
@@ -318,6 +319,10 @@ a run of failed pings drops back to discovery.
   source reads the content:// .mkv) and auto-next-episode. "I miei download" (Settings) lists
   progress/cancel, play, "Apri con…" (VLC, MX…) and delete. Not verified on a device yet — the
   pipeline was verified on the JVM against the live CDN; the Android glue compiled and linted only.
+
+### Search study (2026-10-16)
+
+The touch app's search was reworked after reading Netflix 9.87.1's APK for *behaviour* (manifest, resource strings, class names and field types via `aapt2` + `dexdump`) — never its code or assets; Netflix's UI is Jetpack Compose + a server-driven flex layout, so there is no layout file to read, and its font isn't in the package. What the APK proves: the field's scope is "titles, genres or people"; three destinations (pre-query / suggestions / results, `QueryType` PREQUERY|SEARCH); voice search via the system recogniser (`voiceSearchMode=0x5` + a `RECOGNIZE_SPEECH` `<queries>`); a per-search UUID and `EmptyQueryException`; cancel/fail telemetry. What it doesn't: debounce timing, ranking. Evidence files were scratch-only; the method is reproducible with the two commands above.
 
 ## Conventions
 

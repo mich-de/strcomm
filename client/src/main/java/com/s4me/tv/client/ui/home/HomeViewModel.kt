@@ -220,6 +220,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = HomeUiState.Error("Nessun canale raggiungibile al momento")
         return@launch
       }
+      // Search's pre-query list reads this instead of asking the site again.
+      HomeSnapshot.trending =
+        channelSections.firstOrNull()?.items.orEmpty().filter { it.kind == ItemKind.MOVIE || it.kind == ItemKind.SERIES }.take(10)
       val heroCandidates =
         channelSections.firstOrNull()
           ?.items
