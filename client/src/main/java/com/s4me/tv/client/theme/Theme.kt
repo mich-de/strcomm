@@ -30,6 +30,15 @@ private val DarkColors =
     surfaceVariant = Color(0xFF242427),
     onSurfaceVariant = Color(0xFFB3B3B3),
     outline = Color(0xFF3F3F44),
+    // Tonal containers (selected chips, tonal buttons, the bottom bar) default to M3's lavender; these are the greys of
+    // GreyButton and the poster rows instead.
+    secondaryContainer = Color(0xFF3A3A3C),
+    onSecondaryContainer = Color(0xFFF2F2F2),
+    surfaceContainerLowest = Color(0xFF0A0A0B),
+    surfaceContainerLow = Color(0xFF101012),
+    surfaceContainer = Color(0xFF141416),
+    surfaceContainerHigh = Color(0xFF1C1C1F),
+    surfaceContainerHighest = Color(0xFF242427),
   )
 
 private val LightColors =
@@ -43,6 +52,8 @@ private val LightColors =
     onSurface = Color(0xFF1A1C22),
     surfaceVariant = Color(0xFFEDEEF2),
     onSurfaceVariant = Color(0xFF5A5F6A),
+    secondaryContainer = Color(0xFFE7E8EC),
+    onSecondaryContainer = Color(0xFF1A1C22),
   )
 
 @Composable

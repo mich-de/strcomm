@@ -147,7 +147,7 @@ fun RankedPosterCard(item: StreamItem, rank: Int, onClick: () -> Unit, modifier:
       color = MaterialTheme.colorScheme.outline,
       modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 4.dp),
     )
-    PosterCard(item = item, onClick = onClick, width = width, modifier = Modifier.align(Alignment.BottomEnd))
+    PosterCard(item = item, onClick = onClick, width = width, showBadges = false, modifier = Modifier.align(Alignment.BottomEnd))
   }
 }
 

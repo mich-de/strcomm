@@ -7,13 +7,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -57,18 +54,17 @@ fun MeScreen(
   val profile = remember { ProfileScope.current(context) }
   val myList = remember { WatchlistStore(context).all().take(12) }
 
-  Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).windowInsetsPadding(WindowInsets.safeDrawing).padding(bottom = 24.dp)) {
+  Column(modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 20.dp)) {
       ProfileAvatar(profile, size = 84.dp)
       Text(profile.name, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold), modifier = Modifier.padding(top = 10.dp))
       GreyButton("Cambia profilo", R.drawable.ic_ms_account_circle, onClick = onOpenProfiles, modifier = Modifier.padding(top = 12.dp))
     }
 
-    Text(
-      "La mia lista  ›",
-      style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-      modifier = Modifier.clickable(onClick = onOpenMyList).padding(horizontal = 16.dp, vertical = 8.dp),
-    )
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable(onClick = onOpenMyList).padding(horizontal = 16.dp, vertical = 8.dp)) {
+      Text("La mia lista", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+      Symbol(R.drawable.ic_ms_chevron_right, size = 22.dp)
+    }
     if (myList.isEmpty()) {
       Text(
         "La tua lista è vuota. Aggiungi film e serie con “La mia lista” sulla loro pagina.",

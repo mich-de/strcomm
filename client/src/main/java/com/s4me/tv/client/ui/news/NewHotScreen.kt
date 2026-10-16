@@ -6,16 +6,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,11 +28,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.s4me.tv.client.R
-import com.s4me.tv.client.ui.components.ErrorScreen
 import com.s4me.tv.client.ui.components.Symbol
 import com.s4me.tv.client.ui.home.HomeSnapshot
 import com.s4me.tv.engine.ItemKind
@@ -51,9 +50,15 @@ private const val PER_SECTION = 6
  */
 @Composable
 fun NewHotScreen(onOpen: (StreamItem) -> Unit, modifier: Modifier = Modifier) {
-  val sections = remember { HomeSnapshot.sections.map { it to it.items.filter { i -> i.kind == ItemKind.MOVIE || i.kind == ItemKind.SERIES }.take(PER_SECTION) }.filter { it.second.isNotEmpty() } }
+  val rows by HomeSnapshot.sections.collectAsStateWithLifecycle()
+  val sections =
+    remember(rows) {
+      rows
+        .map { it to it.items.filter { i -> i.kind == ItemKind.MOVIE || i.kind == ItemKind.SERIES }.take(PER_SECTION) }
+        .filter { it.second.isNotEmpty() }
+    }
   if (sections.isEmpty()) {
-    ErrorScreen("Nessuna novità caricata.\nTorna alla Home e riprova tra un momento.", modifier = modifier.fillMaxSize())
+    WaitingForHome(modifier)
     return
   }
   val context = LocalContext.current
@@ -68,7 +73,7 @@ fun NewHotScreen(onOpen: (StreamItem) -> Unit, modifier: Modifier = Modifier) {
       Text(
         "Novità e di tendenza",
         style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-        modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
       )
     }
     sections.forEach { (section, titles) ->
@@ -110,5 +115,25 @@ private fun NewHotCard(item: StreamItem, onOpen: (StreamItem) -> Unit, watchlist
         )
       }
     }
+  }
+}
+
+/** Home hasn't delivered its rows yet (or the site is unreachable): the feed fills in by itself the
+ *  moment it does, so this is a wait, not an error. */
+@Composable
+private fun WaitingForHome(modifier: Modifier) {
+  Column(
+    modifier = modifier.fillMaxSize().padding(32.dp),
+    verticalArrangement = Arrangement.Center,
+    horizontalAlignment = Alignment.CenterHorizontally,
+  ) {
+    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+    Text(
+      "Le novità compaiono appena la Home ha finito di caricare.",
+      style = MaterialTheme.typography.bodyMedium,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      textAlign = TextAlign.Center,
+      modifier = Modifier.padding(top = 16.dp),
+    )
   }
 }

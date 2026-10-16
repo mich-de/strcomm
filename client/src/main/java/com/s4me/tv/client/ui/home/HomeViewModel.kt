@@ -249,13 +249,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
-  /** Chart rows land after the Home is up: slot each under the personal rows in [CHART_ORDER] so
-   *  the page doesn't reshuffle as they arrive. */
   /** What the "Novità" tab shows: the site's and the charts' rows, without personal or genre ones. */
   private fun publishSnapshot(sections: List<HomeSection>) {
-    HomeSnapshot.sections = sections.filter { it.channelId != CONTINUE_WATCHING_ID && it.channelId != WATCHLIST_ID && !it.channelId.startsWith("genre-") }
+    HomeSnapshot.publishSections(
+      sections.filter { it.channelId != CONTINUE_WATCHING_ID && it.channelId != WATCHLIST_ID && !it.channelId.startsWith("genre-") }
+    )
   }
 
+  /** Chart rows land after the Home is up: slot each under the personal rows in [CHART_ORDER] so
+   *  the page doesn't reshuffle as they arrive. */
   private fun placeChartRow(row: HomeSection) =
     _uiState.update { state ->
       if (state !is HomeUiState.Success) return@update state

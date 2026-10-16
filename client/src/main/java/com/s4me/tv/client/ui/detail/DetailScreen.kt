@@ -15,19 +15,15 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -39,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -46,12 +43,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -59,11 +60,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.s4me.tv.client.R
+import com.s4me.tv.client.ui.components.BackCircleButton
 import com.s4me.tv.client.ui.components.ErrorScreen
 import com.s4me.tv.client.ui.components.GreyButton
 import com.s4me.tv.client.ui.components.IconAction
+import com.s4me.tv.client.ui.components.LocalTopInset
 import com.s4me.tv.client.ui.components.PlayButton
 import com.s4me.tv.client.ui.components.PosterCard
+import com.s4me.tv.client.ui.components.StatusBarScrim
 import com.s4me.tv.client.ui.components.SymbolLabel
 import com.s4me.tv.client.ui.components.TrailerView
 import com.s4me.tv.client.ui.downloads.DownloadButton
@@ -92,6 +96,11 @@ fun DetailScreen(
   val similar by viewModel.similar.collectAsStateWithLifecycle()
   val context = LocalContext.current
   val scroll = rememberScrollState()
+  // Status bar height this page covers itself: the hero runs up under it (see LocalTopInset).
+  val topInset = LocalTopInset.current
+  // The status bar turns solid as the hero scrolls away.
+  val scrimRamp = with(LocalDensity.current) { 200.dp.toPx() }
+  val scrimProgress by remember { derivedStateOf { scroll.value / scrimRamp } }
 
   // The header plays the trailer in place, muted, once the page has settled — the title page's
   // billboard. The still stays on top until YouTube itself reports playing, so a trailer that can't
@@ -111,7 +120,7 @@ fun DetailScreen(
 
   Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scroll)) {
-      Box(modifier = Modifier.fillMaxWidth().height(300.dp)) {
+      Box(modifier = Modifier.fillMaxWidth().height(300.dp + topInset)) {
         if (showTrailer && trailerId != null) {
           TrailerView(youtubeId = trailerId, muted = muted, onPlaying = { trailerPlaying = true }, modifier = Modifier.fillMaxSize())
         }
@@ -129,6 +138,8 @@ fun DetailScreen(
             Brush.verticalGradient(0.4f to Color.Transparent, 1f to MaterialTheme.colorScheme.background)
           )
         )
+        // Under the status bar and the back button, so they read on a bright picture.
+        Box(Modifier.fillMaxWidth().height(topInset + 64.dp).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent))))
         if (trailerPlaying) {
           IconButton(
             onClick = { muted = !muted },
@@ -196,17 +207,9 @@ fun DetailScreen(
       }
     }
 
-    Text(
-      text = "‹",
-      style = MaterialTheme.typography.headlineMedium,
-      color = Color.White,
-      modifier =
-        Modifier.windowInsetsPadding(WindowInsets.safeDrawing)
-          .padding(8.dp)
-          .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(50))
-          .clickable(onClick = onBack)
-          .padding(horizontal = 16.dp, vertical = 4.dp),
-    )
+    // The back button's row (40 dp + its 8 dp margins) is part of the bar once the page has scrolled.
+    StatusBarScrim(scrimProgress, extra = 56.dp)
+    BackCircleButton(onBack = onBack, modifier = Modifier.padding(top = topInset))
   }
 }
 
@@ -286,21 +289,25 @@ private fun PlayActions(
   }
 }
 
-/** Tabs as text with an underline under the selected one — the title page's "Panoramica | Simili". */
+/** Tabs as text with an underline under the selected one — the title page's "Panoramica | Simili". The
+ *  underline is drawn behind each label, so a tab is as wide as its text and the row can hold several. */
 @Composable
 private fun UnderlineTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+  val accent = MaterialTheme.colorScheme.primary
   Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
     labels.forEachIndexed { index, label ->
       val active = index == selected
-      Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onSelect(index) }) {
-        Text(
-          label.uppercase(),
-          style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-          color = if (active) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant,
-          modifier = Modifier.padding(vertical = 8.dp),
-        )
-        Box(Modifier.height(3.dp).fillMaxWidth().background(if (active) MaterialTheme.colorScheme.primary else Color.Transparent))
-      }
+      Text(
+        label.uppercase(),
+        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+        color = if (active) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier =
+          Modifier.clickable { onSelect(index) }
+            .drawBehind {
+              if (active) drawRect(accent, topLeft = Offset(0f, size.height - 3.dp.toPx()), size = Size(size.width, 3.dp.toPx()))
+            }
+            .padding(top = 8.dp, bottom = 11.dp),
+      )
     }
   }
 }
@@ -310,7 +317,7 @@ private fun UnderlineTabs(labels: List<String>, selected: Int, onSelect: (Int) -
 @Composable
 private fun SimilarGrid(items: List<StreamItem>, onOpen: (StreamItem) -> Unit, modifier: Modifier = Modifier) {
   FlowRow(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-    items.forEach { m -> PosterCard(item = m, onClick = { onOpen(m) }, width = 104.dp, showLabel = true) }
+    items.forEach { m -> PosterCard(item = m, onClick = { onOpen(m) }, width = 104.dp, showLabel = true, showBadges = false) }
   }
 }
 
@@ -323,7 +330,7 @@ private fun SagaRow(items: List<StreamItem>, onOpen: (StreamItem) -> Unit, modif
       style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
     )
     LazyRow(modifier = Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-      items(items, key = { it.url }) { m -> PosterCard(item = m, onClick = { onOpen(m) }, width = 104.dp) }
+      items(items, key = { it.url }) { m -> PosterCard(item = m, onClick = { onOpen(m) }, width = 104.dp, showBadges = false) }
     }
   }
 }

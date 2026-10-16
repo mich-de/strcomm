@@ -8,10 +8,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
@@ -66,7 +68,7 @@ class MainActivity : ComponentActivity() {
         var chosen by rememberSaveable {
           mutableStateOf(intent?.getBooleanExtra(EXTRA_PROFILE_CHOSEN, false) == true || ProfileScope.all(this@MainActivity).size <= 1)
         }
-        if (chosen) ClientApp() else ProfilesScreen(onPicked = { chosen = true })
+        if (chosen) ClientApp() else ProfilesScreen(onPicked = { chosen = true }, modifier = Modifier.safeDrawingPadding())
       }
     }
   }

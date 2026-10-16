@@ -11,22 +11,20 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,15 +35,19 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.s4me.tv.client.R
+import com.s4me.tv.client.ui.components.BackCircleButton
 import com.s4me.tv.client.ui.components.EpisodeRow
+import com.s4me.tv.client.ui.components.GreyButton
 import com.s4me.tv.client.ui.components.LoadingScreen
-import com.s4me.tv.client.ui.components.SymbolLabel
+import com.s4me.tv.client.ui.components.LocalTopInset
+import com.s4me.tv.client.ui.components.StatusBarScrim
 import com.s4me.tv.engine.StreamItem
 import com.s4me.tv.engine.WatchlistStore
 import com.s4me.tv.engine.youtubeVideoId
@@ -58,8 +60,13 @@ fun SeriesScreen(series: StreamItem, onOpen: (StreamItem) -> Unit, onBack: () ->
   val selected by vm.selectedSeason.collectAsStateWithLifecycle()
   val episodes by vm.episodes.collectAsStateWithLifecycle()
 
+  val listState = rememberLazyListState()
+  // The status bar turns solid as the header picture scrolls away.
+  val scrimRamp = with(LocalDensity.current) { 180.dp.toPx() }
+  val scrimProgress by remember { derivedStateOf { if (listState.firstVisibleItemIndex > 0) 1f else listState.firstVisibleItemScrollOffset / scrimRamp } }
+
   Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-    LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 24.dp)) {
       item { SeriesHeader(info = info) }
       if (seasons.size > 1) {
         item {
@@ -87,6 +94,8 @@ fun SeriesScreen(series: StreamItem, onOpen: (StreamItem) -> Unit, onBack: () ->
           }
       }
     }
+    // The back button's row (40 dp + its 8 dp margins) is part of the bar once the page has scrolled.
+    StatusBarScrim(scrimProgress, extra = 56.dp)
     BackButton(onBack)
   }
 }
@@ -122,11 +131,13 @@ fun SeasonEpisodesScreen(season: StreamItem, onOpen: (StreamItem) -> Unit, onBac
 @Composable
 private fun SeriesHeader(info: StreamItem) {
   val context = LocalContext.current
+  // Status bar height this page covers itself: the header picture runs up under it (see LocalTopInset).
+  val topInset = LocalTopInset.current
   val watchlist = remember { WatchlistStore(context) }
   var inList by remember(info.url) { mutableStateOf(watchlist.contains(info.url)) }
 
   Column {
-    Box(modifier = Modifier.fillMaxWidth().height(240.dp)) {
+    Box(modifier = Modifier.fillMaxWidth().height(240.dp + topInset)) {
       AsyncImage(
         model = info.backdrop ?: info.thumbnail,
         contentDescription = info.title,
@@ -136,21 +147,24 @@ private fun SeriesHeader(info: StreamItem) {
         modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
       )
       Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to MaterialTheme.colorScheme.background)))
+      // Under the status bar and the back button, so they read on a bright picture.
+      Box(Modifier.fillMaxWidth().height(topInset + 64.dp).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent))))
     }
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-      Text(info.title, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
+      Text(info.title, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold))
       val badge = (info.imdbRating ?: info.tmdbRating)?.let { "★ %.1f".format(it) } ?: info.quality
       val meta = listOfNotNull(info.year, badge, info.genres).joinToString("  ·  ")
       if (meta.isNotBlank()) {
         Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
       }
-      Row(modifier = Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        FilledTonalButton(onClick = { inList = watchlist.toggle(info) }) {
-          SymbolLabel(if (inList) R.drawable.ic_ms_check else R.drawable.ic_ms_add, if (inList) "Nella lista" else "La mia lista")
-        }
-        info.trailerYoutubeId?.let { id ->
-          FilledTonalButton(onClick = { openSeriesTrailer(context, id) }) { SymbolLabel(R.drawable.ic_ms_movie, "Trailer") }
-        }
+      Row(modifier = Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        GreyButton(
+          if (inList) "Nella lista" else "La mia lista",
+          if (inList) R.drawable.ic_ms_check else R.drawable.ic_ms_add,
+          onClick = { inList = watchlist.toggle(info) },
+          modifier = Modifier.weight(1f),
+        )
+        info.trailerYoutubeId?.let { id -> GreyButton("Trailer", R.drawable.ic_ms_movie, onClick = { openSeriesTrailer(context, id) }, modifier = Modifier.weight(1f)) }
       }
       info.plot?.let { Text(it, style = MaterialTheme.typography.bodyMedium, maxLines = 4, modifier = Modifier.padding(top = 12.dp)) }
     }
@@ -166,16 +180,5 @@ private fun openSeriesTrailer(context: Context, videoId: String) {
 
 @Composable
 private fun BoxScope.BackButton(onBack: () -> Unit) {
-  Text(
-    "‹",
-    style = MaterialTheme.typography.headlineMedium,
-    color = Color.White,
-    modifier =
-      Modifier.align(Alignment.TopStart)
-        .windowInsetsPadding(WindowInsets.safeDrawing)
-        .padding(8.dp)
-        .background(Color.Black.copy(alpha = 0.4f), androidx.compose.foundation.shape.RoundedCornerShape(50))
-        .clickable(onClick = onBack)
-        .padding(horizontal = 16.dp, vertical = 4.dp),
-  )
+  BackCircleButton(onBack = onBack, modifier = Modifier.align(Alignment.TopStart).padding(top = LocalTopInset.current))
 }

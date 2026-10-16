@@ -37,9 +37,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.s4me.tv.client.R
 import com.s4me.tv.client.ui.components.ErrorScreen
 import com.s4me.tv.client.ui.components.LoadingScreen
 import com.s4me.tv.client.ui.components.PosterCard
+import com.s4me.tv.client.ui.components.Symbol
 import com.s4me.tv.engine.CountryOption
 import com.s4me.tv.engine.GenreOption
 import com.s4me.tv.engine.ItemKind
@@ -207,7 +209,7 @@ private fun TitleRow(title: String, onBack: () -> Unit) {
     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    Text("‹", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.clickable(onClick = onBack).padding(horizontal = 12.dp, vertical = 4.dp))
+    Symbol(R.drawable.ic_ms_arrow_back, contentDescription = "Indietro", modifier = Modifier.clickable(onClick = onBack).padding(12.dp))
     Text(title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), modifier = Modifier.padding(start = 4.dp))
   }
 }

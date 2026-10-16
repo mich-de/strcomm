@@ -6,13 +6,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -54,7 +51,7 @@ fun CustomListsScreen(onOpenList: (String) -> Unit, onBack: () -> Unit, modifier
 
   Column(modifier = modifier.fillMaxSize()) {
     Row(
-      modifier = Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 8.dp, vertical = 4.dp),
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
       IconButton(onClick = onBack) { Icon(ImageVector.vectorResource(R.drawable.ic_ms_arrow_back), contentDescription = "Indietro") }
@@ -128,7 +125,7 @@ fun CustomListDetailScreen(listId: String, onOpen: (StreamItem) -> Unit, onBack:
 
   Column(modifier = modifier.fillMaxSize()) {
     Row(
-      modifier = Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 8.dp, vertical = 4.dp),
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
       IconButton(onClick = onBack) { Icon(ImageVector.vectorResource(R.drawable.ic_ms_arrow_back), contentDescription = "Indietro") }

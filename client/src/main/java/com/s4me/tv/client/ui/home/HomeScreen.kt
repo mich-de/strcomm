@@ -1,7 +1,9 @@
 package com.s4me.tv.client.ui.home
 
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -19,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,6 +34,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,8 +47,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -54,10 +61,12 @@ import com.s4me.tv.client.ui.components.ErrorScreen
 import com.s4me.tv.client.ui.components.GreyButton
 import com.s4me.tv.client.ui.components.ItemActionsSheet
 import com.s4me.tv.client.ui.components.LoadingScreen
+import com.s4me.tv.client.ui.components.LocalTopInset
 import com.s4me.tv.client.ui.components.PlayButton
 import com.s4me.tv.client.ui.components.PosterCard
 import com.s4me.tv.client.ui.components.RankedPosterCard
 import com.s4me.tv.client.ui.components.SheetAction
+import com.s4me.tv.client.ui.components.StatusBarScrim
 import com.s4me.tv.client.ui.components.Symbol
 import com.s4me.tv.client.ui.components.SymbolLabel
 import com.s4me.tv.client.ui.components.TrailerView
@@ -80,36 +89,59 @@ fun HomeScreen(
   val genres by viewModel.genres.collectAsStateWithLifecycle()
   val docGenreId = remember(genres) { genres.firstOrNull { it.name.contains("document", ignoreCase = true) }?.id }
   val context = LocalContext.current
+  // Status bar height this page covers itself: the billboard runs up under it (see LocalTopInset).
+  val topInset = LocalTopInset.current
   // The long-press menu of the personal rows: the section it came from decides what it can remove.
   var menu by remember { mutableStateOf<Pair<HomeSection, StreamItem>?>(null) }
 
   when (val s = state) {
     is HomeUiState.Loading -> LoadingScreen(modifier)
     is HomeUiState.Error -> ErrorScreen(s.message, onRetry = viewModel::load, modifier = modifier)
-    is HomeUiState.Success ->
-      LazyColumn(
-        modifier = modifier,
-        contentPadding = PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-      ) {
-        item { TypeFilterRow(docGenreId = docGenreId, onOpenBrowse = onOpenBrowse) }
-        if (s.heroes.isNotEmpty()) {
-          item { HeroPager(heroes = s.heroes, onOpen = onOpen) }
+    is HomeUiState.Success -> {
+      val listState = rememberLazyListState()
+      // The status bar turns solid as the billboard scrolls away.
+      val scrimRamp = with(LocalDensity.current) { 200.dp.toPx() }
+      val scrimProgress by remember { derivedStateOf { if (listState.firstVisibleItemIndex > 0) 1f else listState.firstVisibleItemScrollOffset / scrimRamp } }
+      Box(modifier = modifier) {
+        LazyColumn(
+          state = listState,
+          modifier = Modifier.fillMaxSize(),
+          contentPadding = PaddingValues(bottom = 24.dp),
+          verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+          // The type pills sit over the billboard's top, as on a streaming app's home; with no billboard
+          // (nothing loaded yet) they just sit at the top.
+          if (s.heroes.isNotEmpty()) {
+            item {
+              Box {
+                HeroPager(heroes = s.heroes, topInset = topInset, onOpen = onOpen)
+                TypeFilterRow(
+                  docGenreId = docGenreId,
+                  onOpenBrowse = onOpenBrowse,
+                  modifier = Modifier.align(Alignment.TopStart).fillMaxWidth().padding(top = topInset + 8.dp),
+                )
+              }
+            }
+          } else {
+            item { TypeFilterRow(docGenreId = docGenreId, onOpenBrowse = onOpenBrowse, modifier = Modifier.padding(top = topInset + 8.dp)) }
+          }
+          if (genres.isNotEmpty()) {
+            item { GenreChips(genres = genres, onOpenGenre = { id -> onOpenBrowse("genre=$id") }) }
+          }
+          items(s.sections, key = { it.channelId }) { section ->
+            val personal = section.channelId == CONTINUE_WATCHING_ID || section.channelId == WATCHLIST_ID
+            SectionRow(
+              section = section,
+              ranked = section.channelId == TRENDING_ID || section.channelId == JUSTWATCH_ID,
+              onOpen = onOpen,
+              onLongPress = if (personal) { item -> menu = section to item } else null,
+              onTitleClick = if (section.channelId == WATCHLIST_ID) onOpenMyList else null,
+            )
+          }
         }
-        if (genres.isNotEmpty()) {
-          item { GenreChips(genres = genres, onOpenGenre = { id -> onOpenBrowse("genre=$id") }) }
-        }
-        items(s.sections, key = { it.channelId }) { section ->
-          val personal = section.channelId == CONTINUE_WATCHING_ID || section.channelId == WATCHLIST_ID
-          SectionRow(
-            section = section,
-            ranked = section.channelId == TRENDING_ID || section.channelId == JUSTWATCH_ID,
-            onOpen = onOpen,
-            onLongPress = if (personal) { item -> menu = section to item } else null,
-            onTitleClick = if (section.channelId == WATCHLIST_ID) onOpenMyList else null,
-          )
-        }
+        StatusBarScrim(scrimProgress)
       }
+    }
   }
 
   menu?.let { (section, item) ->
@@ -133,12 +165,14 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HeroPager(heroes: List<StreamItem>, onOpen: (StreamItem) -> Unit) {
+private fun HeroPager(heroes: List<StreamItem>, topInset: Dp, onOpen: (StreamItem) -> Unit) {
   val pagerState = rememberPagerState(pageCount = { heroes.size })
   val heroHeight = if (isWideScreen()) 420.dp else 260.dp
+  // The billboard runs up under the status bar (and the type pills laid over it), so it is that much taller.
+  val fullHeight = heroHeight + topInset
   val context = LocalContext.current
   val watchlistStore = remember { WatchlistStore(context) }
-  HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth().height(heroHeight)) { page ->
+  HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth().height(fullHeight)) { page ->
     val hero = heroes[page]
     var inList by remember(hero.url) { mutableStateOf(watchlistStore.contains(hero.url)) }
 
@@ -156,10 +190,10 @@ private fun HeroPager(heroes: List<StreamItem>, onOpen: (StreamItem) -> Unit) {
       }
     }
 
-    Box(modifier = Modifier.fillMaxWidth().height(heroHeight).clickable { onOpen(hero) }) {
+    Box(modifier = Modifier.fillMaxWidth().height(fullHeight).clickable { onOpen(hero) }) {
       val trailerId = hero.trailerYoutubeId
       if (showTrailer && trailerId != null) {
-        TrailerView(youtubeId = trailerId, muted = true, onPlaying = { trailerPlaying = true }, modifier = Modifier.fillMaxWidth().height(heroHeight))
+        TrailerView(youtubeId = trailerId, muted = true, onPlaying = { trailerPlaying = true }, modifier = Modifier.fillMaxWidth().height(fullHeight))
       }
       // The backdrop sits OVER the trailer and fades out only once YouTube says it is playing. Not
       // every trailer can play inside an app — embedding turned off by its owner, age-restricted,
@@ -173,17 +207,19 @@ private fun HeroPager(heroes: List<StreamItem>, onOpen: (StreamItem) -> Unit) {
         contentScale = ContentScale.Crop,
         modifier =
           Modifier.fillMaxWidth()
-            .height(heroHeight)
+            .height(fullHeight)
             .graphicsLayer { alpha = backdropAlpha }
             .background(MaterialTheme.colorScheme.surfaceVariant),
       )
       Box(
         modifier =
-          Modifier.fillMaxWidth().height(heroHeight).background(
+          Modifier.fillMaxWidth().height(fullHeight).background(
             Brush.verticalGradient(0.35f to Color.Transparent, 1f to MaterialTheme.colorScheme.background)
           )
       )
-      Column(modifier = Modifier.align(Alignment.BottomStart).padding(20.dp)) {
+      // Under the status bar and the type pills, so they read on a bright picture.
+      Box(Modifier.fillMaxWidth().height(topInset + 76.dp).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent))))
+      Column(modifier = Modifier.align(Alignment.BottomStart).padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 34.dp)) {
         Text(
           text = hero.title,
           style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
@@ -211,7 +247,7 @@ private fun HeroPager(heroes: List<StreamItem>, onOpen: (StreamItem) -> Unit) {
       }
       if (heroes.size > 1) {
         Row(
-          modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+          modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp),
           horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
           heroes.indices.forEach { i ->
@@ -230,25 +266,28 @@ private fun HeroPager(heroes: List<StreamItem>, onOpen: (StreamItem) -> Unit) {
 }
 
 @Composable
-private fun TypeFilterRow(docGenreId: Int?, onOpenBrowse: (String) -> Unit) {
-  LazyRow(
-    contentPadding = PaddingValues(horizontal = 16.dp),
-    horizontalArrangement = Arrangement.spacedBy(8.dp),
-    modifier = Modifier.padding(top = 8.dp),
-  ) {
-    item {
-      AssistChip(
-        onClick = { onOpenBrowse("") },
-        label = { Text("Tutto il catalogo") },
-        leadingIcon = { Symbol(R.drawable.ic_ms_explore, size = AssistChipDefaults.IconSize) },
-      )
-    }
-    item { AssistChip(onClick = { onOpenBrowse("type=movie") }, label = { Text("Film") }, leadingIcon = { Symbol(R.drawable.ic_ms_movie, size = AssistChipDefaults.IconSize) }) }
-    item { AssistChip(onClick = { onOpenBrowse("type=tv") }, label = { Text("Serie TV") }, leadingIcon = { Symbol(R.drawable.ic_ms_tv, size = AssistChipDefaults.IconSize) }) }
+private fun TypeFilterRow(docGenreId: Int?, onOpenBrowse: (String) -> Unit, modifier: Modifier = Modifier) {
+  LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = modifier) {
+    item { TypePill("Tutto il catalogo", R.drawable.ic_ms_explore) { onOpenBrowse("") } }
+    item { TypePill("Film", R.drawable.ic_ms_movie) { onOpenBrowse("type=movie") } }
+    item { TypePill("Serie TV", R.drawable.ic_ms_tv) { onOpenBrowse("type=tv") } }
     if (docGenreId != null) {
-      item { AssistChip(onClick = { onOpenBrowse("genre=$docGenreId") }, label = { Text("Documentari") }, leadingIcon = { Symbol(R.drawable.ic_ms_public, size = AssistChipDefaults.IconSize) }) }
+      item { TypePill("Documentari", R.drawable.ic_ms_public) { onOpenBrowse("genre=$docGenreId") } }
     }
   }
+}
+
+/** A pill laid over artwork: translucent dark fill and a pale outline, so it reads on any picture. */
+@Composable
+private fun TypePill(label: String, @DrawableRes icon: Int, onClick: () -> Unit) {
+  AssistChip(
+    onClick = onClick,
+    label = { Text(label) },
+    leadingIcon = { Symbol(icon, size = AssistChipDefaults.IconSize) },
+    shape = RoundedCornerShape(50),
+    colors = AssistChipDefaults.assistChipColors(containerColor = Color.Black.copy(alpha = 0.45f), labelColor = Color.White, leadingIconContentColor = Color.White),
+    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.55f)),
+  )
 }
 
 @Composable
@@ -270,12 +309,14 @@ private fun SectionRow(
   onTitleClick: (() -> Unit)? = null,
 ) {
   Column {
-    Text(
-      // A row whose title opens its full screen says so with a chevron.
-      text = if (onTitleClick != null) "${section.title}  ›" else section.title,
-      style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
       modifier = (if (onTitleClick != null) Modifier.clickable(onClick = onTitleClick) else Modifier).padding(start = 16.dp, bottom = 10.dp),
-    )
+    ) {
+      Text(section.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+      // A row whose title opens its full screen says so with a chevron.
+      if (onTitleClick != null) Symbol(R.drawable.ic_ms_chevron_right, size = 22.dp)
+    }
     LazyRow(
       contentPadding = PaddingValues(horizontal = 16.dp),
       horizontalArrangement = Arrangement.spacedBy(12.dp),
