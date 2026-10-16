@@ -137,7 +137,7 @@ fun PosterCard(
  *  — the "Top 10" treatment — instead of the small overlay digit this used to draw on the card
  *  itself (that read as a generic badge, not a ranked chart). */
 @Composable
-fun RankedPosterCard(item: StreamItem, rank: Int, onClick: () -> Unit, modifier: Modifier = Modifier, width: Dp = POSTER_WIDTH) {
+fun RankedPosterCard(item: StreamItem, rank: Int, onClick: () -> Unit, modifier: Modifier = Modifier, width: Dp = POSTER_WIDTH, showLabel: Boolean = false) {
   Box(modifier = modifier.width(width + 52.dp)) {
     Text(
       text = "$rank",
@@ -147,7 +147,7 @@ fun RankedPosterCard(item: StreamItem, rank: Int, onClick: () -> Unit, modifier:
       color = MaterialTheme.colorScheme.outline,
       modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 4.dp),
     )
-    PosterCard(item = item, onClick = onClick, width = width, showBadges = false, modifier = Modifier.align(Alignment.BottomEnd))
+    PosterCard(item = item, onClick = onClick, width = width, showLabel = showLabel, showBadges = false, modifier = Modifier.align(Alignment.BottomEnd))
   }
 }
 

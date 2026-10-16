@@ -127,7 +127,7 @@ class RemoteControlServer(port: Int, context: Context) : NanoHTTPD(port) {
     val entries =
       runCatching { json.decodeFromString(ListSerializer(WatchProgress.serializer()), body["postData"].orEmpty()) }.getOrNull()
         ?: return newFixedLengthResponse(Response.Status.BAD_REQUEST, "text/plain", "bad request")
-    entries.forEach { progressStore.mergeIfNewer(it) }
+    for (e in entries) progressStore.mergeIfNewer(e)
     return jsonResponse("""{"ok":true}""")
   }
 

@@ -95,6 +95,7 @@ import coil3.compose.AsyncImage
 import com.s4me.tv.client.R
 import com.s4me.tv.client.download.LOCAL_SERVER_ID
 import com.s4me.tv.client.player.PipController
+import com.s4me.tv.client.ui.components.LanguageFlag
 import com.s4me.tv.client.ui.components.Symbol
 import com.s4me.tv.engine.ChannelRegistry
 import com.s4me.tv.engine.DESKTOP_UA
@@ -853,7 +854,7 @@ private fun TrackSheet(exoPlayer: ExoPlayer, tracks: Tracks, onDone: () -> Unit,
     Text("Audio", style = MaterialTheme.typography.titleMedium)
     if (audio.isEmpty()) Text("Traccia unica", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     audio.forEach { g ->
-      TrackLine(label = trackDisplayName(g), selected = g.isSelected) {
+      TrackLine(label = trackDisplayName(g), selected = g.isSelected, languageCode = g.getTrackFormat(0).language) {
         applyOverride(exoPlayer, g)
         onDone()
       }
@@ -875,7 +876,11 @@ private fun TrackSheet(exoPlayer: ExoPlayer, tracks: Tracks, onDone: () -> Unit,
       }
       text.forEach { g ->
         val forced = (g.getTrackFormat(0).selectionFlags and C.SELECTION_FLAG_FORCED) != 0
-        TrackLine(label = trackDisplayName(g) + if (forced) "  (forzati)" else "", selected = g.isSelected && !textOff) {
+        TrackLine(
+          label = trackDisplayName(g) + if (forced) "  (forzati)" else "",
+          selected = g.isSelected && !textOff,
+          languageCode = g.getTrackFormat(0).language,
+        ) {
           applyOverride(exoPlayer, g)
           onDone()
         }
@@ -940,27 +945,43 @@ private fun nextSpeed(cur: Float): Float {
 }
 
 @Composable
-private fun TrackLine(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun TrackLine(label: String, selected: Boolean, languageCode: String? = null, onClick: () -> Unit) {
   TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
     // A fixed-width slot, so labels line up whether or not a row carries the check.
     Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) { if (selected) Symbol(R.drawable.ic_ms_check, size = 20.dp) }
     Spacer(Modifier.width(12.dp))
+    LanguageFlag(languageCode, label)
+    Spacer(Modifier.width(8.dp))
     Text(label, modifier = Modifier.weight(1f))
   }
 }
 
-/** Forced text track, preferring one whose language matches the selected audio. Returns the group
- *  it applied, or null if the title has no forced subtitles. */
+/** Forced text track, preferring an Italian one outright, then one whose language matches the
+ *  selected audio, then any forced track. Returns the group it applied, or null if the title has
+ *  none. "Forced" isn't just the FORCED selection flag: this source doesn't reliably set it on
+ *  these renditions (engine/download's HlsMkvDownloader hit the same thing on the same titles —
+ *  "forced tracks are never FORCED=YES — only recognisable by name/LANGUAGE") — a label or
+ *  language containing "forced" counts too, which is also what lets a languageless "Italian
+ *  [Forced]" rendition be recognised as Italian in the first place (LanguageFlag falls back the
+ *  same way). */
 private fun selectForcedSubtitle(player: ExoPlayer, tracks: Tracks): Tracks.Group? {
+  fun isForced(format: Format) =
+    (format.selectionFlags and C.SELECTION_FLAG_FORCED) != 0 ||
+      format.label?.contains("forced", ignoreCase = true) == true ||
+      format.language?.contains("forced", ignoreCase = true) == true
+  fun isItalian(format: Format) =
+    format.language?.let { it == "it" || it.startsWith("it-", ignoreCase = true) || it == "ita" } == true ||
+      format.label?.contains("italian", ignoreCase = true) == true
   val audioLang =
     tracks.groups
       .firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }
       ?.let { g -> (0 until g.length).firstOrNull { g.isTrackSelected(it) }?.let { g.getTrackFormat(it).language } }
-  val forcedGroups =
-    tracks.groups.filter { g ->
-      g.type == C.TRACK_TYPE_TEXT && g.isSupported && (g.getTrackFormat(0).selectionFlags and C.SELECTION_FLAG_FORCED) != 0
-    }
-  val pick = forcedGroups.firstOrNull { it.getTrackFormat(0).language == audioLang } ?: forcedGroups.firstOrNull() ?: return null
+  val forcedGroups = tracks.groups.filter { g -> g.type == C.TRACK_TYPE_TEXT && g.isSupported && isForced(g.getTrackFormat(0)) }
+  val pick =
+    forcedGroups.firstOrNull { isItalian(it.getTrackFormat(0)) }
+      ?: forcedGroups.firstOrNull { it.getTrackFormat(0).language == audioLang }
+      ?: forcedGroups.firstOrNull()
+      ?: return null
   player.trackSelectionParameters =
     player.trackSelectionParameters
       .buildUpon()

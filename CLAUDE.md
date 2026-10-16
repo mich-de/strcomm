@@ -210,10 +210,30 @@ The source site's own `score` is a stale second-hand TMDB import. `Channel.detai
   server-rendered `/tv/{id}/seasons` page via `SEASON_ROW`). Without this every season inherited the
   series' last-air year ("tutte 2026").
 - All merged in `StreamingCommunityChannel.detail()`; TMDB Italian text wins over the site's.
+- **`LanguageFlag`** (`ui/components/LanguageFlag.kt`, duplicated per app — own package, own `R`
+  class, same PNG assets): a small flag next to a track's language name, in both apps' audio/subtitle
+  picker and the Detail-page track lists. Rasters, not vectors like the rest of each app's icon set —
+  hand-converting ~18 flag SVGs into Android's constrained vector-drawable format wasn't reliable, and
+  flag *emoji* render inconsistently across OEM keyboards (this app's own Samsung target devices
+  among them). Rasterised once (`rsvg-convert`) from flag-icons (MIT; licence at
+  `third_party_licenses/flag-icons-MIT.txt`, repo root — the one shared-asset licence that lives
+  outside either app's own `third_party_licenses/`) into `res/drawable-nodpi/flag_<cc>.png`. Keyed on
+  the normalised ISO-639-1 language code (`Locale(code).language`) first; a "\[Forced\]" rendition on
+  this source routinely has **no language code at all** ("I forced mancano le bandiere" — verified
+  live: the TracksMenu screenshot showed flags on every CC track and none on either \[Forced\] one),
+  so `LanguageFlag` also takes the track's own `name`/label and falls back to matching its leading
+  English word ("Italian", "English", …) against a small map — the same fallback
+  `selectForcedSubtitle` below needs for the same reason.
 - `detail(item, withRatings = false)` skips the rating/trailer lookups — used by both apps'
   `SearchViewModel.verifyCredited`, which fans `detail()` out over ~45 candidates per name tap to
   check real cast/director credits (the site's search is fuzzy text, not a credit lookup).
 - `youtubeVideoId(raw)` (top-level in `Tmdb.kt`) normalises any id/URL form to the 11-char id.
+- `HlsMkvDownloader.plan(masterUrl)` (`engine/download/`) also answers "what languages does this title
+  carry" without downloading anything — `HlsDownloadPlan.audioTracks` / `.subtitleTracks` are
+  (display name, language code) pairs read from the master playlist + each audio rendition's own
+  small playlist (no segment/subtitle-file fetches). Both apps' Detail/title pages call this once
+  `findVideos()` has resolved a native-HLS (`serverId == "hls"`) source, and show "Lingue audio
+  disponibili" / "Sottotitoli disponibili" as flagged pill rows — see `LanguageFlag` below.
 - Every external lookup is cached in-process (`ConcurrentHashMap`) for the session.
 
 ### `:app` — the TV app
@@ -235,6 +255,16 @@ The source site's own `score` is a stale second-hand TMDB import. `Channel.detai
   box otherwise kills the process on backgrounding, taking the server down with it), started from
   `MainActivity`. `/progress` (GET/POST a `WatchProgress` list, engine-side) also backs `:client`'s
   "Sincronizza con la TV" — same server, same trust model, a different device on the other end.
+- **Subtitle default**: `NativeHlsPlayer` now sets `trackSelectionParameters` to prefer Italian
+  audio/text and auto-selects a subtitle on load — **forced, and Italian specifically**
+  (`selectForcedSubtitle`, same function, copy for copy, as `:client`'s player). Previously `:app`
+  had no language preference and no default subtitle at all (`TracksMenu`'s own doc said "their
+  default" was simply off); `:client` already did the forced part, `:app` didn't either. "Forced"
+  itself isn't just the `SELECTION_FLAG_FORCED` bit — this source doesn't reliably set it on these
+  renditions either (the exact thing `engine/download`'s `HlsMkvDownloader` already found: "forced
+  tracks are never `FORCED=YES` — only recognisable by name/LANGUAGE"), so a label or language
+  containing "forced" counts too, and among forced candidates an Italian one (by language code or,
+  again, by name when the code is missing) wins outright over just matching the selected audio.
 - **Icons and search** (mirrors `:client`): every icon is a Material Symbols Rounded vector (`res/drawable/ic_ms_*.xml`, via `Symbol` / `SymbolLabel` in `ui/components/Symbols.kt`, built on `androidx.tv.material3.Icon` so the focus colour carries through); no emoji glyphs in labels (the player's transient feedback maps its token strings to icons in `PlaybackFeedback`). `SearchScreen` has the same states as the touch app — before typing: "Di tendenza" (`CoverCard` row from `HomeSnapshot`, no site request), recent searches, genre buttons; while typing: genre matches between the field and the results; no match: a hint + genres. The D-pad rule is unchanged: DOWN on the field jumps to `contentFocusRequester`, which sits on the first *existing* thing below — genre matches, else the first trending card, else the first recent search, else the first genre — never on two nodes at once. **Not yet exercised with a remote**: compiled, installed and launched (Home loads, no crash) on a phone, but the D-pad walk through Search was interrupted — test it on the box before relying on it.
 - **`BrowseScreen` triple-role**: a series has no dedicated detail screen, so `BrowseScreen`'s root
   can be a `LIST` (filterable catalog + `FilterBar`, incl. curated Academy Award lists resolved
@@ -304,9 +334,12 @@ a run of failed pings drops back to discovery.
   plot, cast chips) *and* streaming stats (resolution · bitrate · codec · fps · audio · buffer) in
   one scrollable surface — previously two separate, independently-toggled overlays. A
   `CircularProgressIndicator` now shows during any `STATE_BUFFERING` (initial load included, which
-  had no indicator before). Forced subtitles are auto-selected on the first `onTracksChanged`
-  (`selectForcedSubtitle`, preferring the audio language). Preferred audio + text language seeded
-  to `"it"`.
+  had no indicator before). A forced subtitle is auto-selected on the first `onTracksChanged`
+  (`selectForcedSubtitle`) — Italian preferred outright when one exists, else one matching the
+  selected audio; "forced" also covers a label/language containing "forced" (this source doesn't
+  reliably set the `SELECTION_FLAG_FORCED` bit on these renditions — same thing `engine/download`'s
+  `HlsMkvDownloader` found), which is also how a languageless "Italian \[Forced\]" rendition gets
+  recognised as Italian at all. Preferred audio + text language seeded to `"it"`.
 - **Auto-next-episode** (`:client`): ported from `:app` — `resolveNextEpisode` finds the next
   episode in the same season and resolves it via `findVideos()`. Starts resolving ~20 s before the
   current episode ends (`NEXT_UP_LOOKAHEAD_MS`) so it's ready in time, not fetched cold at the end;
@@ -416,6 +449,21 @@ The touch app's search was reworked after reading Netflix 9.87.1's APK for *beha
   toybox `nc` on the phone: `adb shell "nc -L -s 127.0.0.1 -p 18443 nc <domain> 443" &`,
   `adb forward tcp:18443 tcp:18443`, then `curl --connect-to <domain>:443:127.0.0.1:18443
   https://<domain>/` from the PC (TLS stays end to end); kill the listener and `adb forward --remove`.
+
+## Pre-existing lint, found and fixed in passing (2026-10-16)
+
+`:app:lintDebug` had two failures that pre-date this session's changes (confirmed by stashing and
+re-running on a clean `HEAD`) — a toolchain/library-version drift, not a regression from any feature
+work:
+- `Iterable<T>.forEach { }` tripped `NewApi` (`current min is 23`) at every one of its 7 call sites
+  across the module. Kotlin's `forEach` is normally a fully-inlined stdlib extension with no trace of
+  `java.lang.Iterable#forEach` in the compiled bytecode, so this reads like a lint/Kotlin-version
+  interaction rather than a real API-level problem — but the safe, zero-risk fix either way is the
+  same: a plain `for (x in xs)` loop compiles to no named `forEach` call at all. Done at every site;
+  none were touched for any other reason.
+- `OkHttpDataSource` (NativeHlsPlayer's data source — unrelated to anything in this session) needed
+  the same `@androidx.annotation.OptIn(UnstableApi::class)` `:client`'s player already carries for
+  the identical class.
 
 ## Not built yet
 

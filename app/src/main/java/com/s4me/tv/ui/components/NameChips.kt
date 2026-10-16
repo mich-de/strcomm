@@ -25,7 +25,7 @@ fun NameChipsRow(label: String, names: List<String>, onNameClick: (String) -> Un
   Column(modifier = modifier.widthIn(max = 900.dp)) {
     Text(text = label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
-      names.forEach { name -> NameChip(name = name, onClick = { onNameClick(name) }) }
+      for (name in names) NameChip(name = name, onClick = { onNameClick(name) })
     }
   }
 }

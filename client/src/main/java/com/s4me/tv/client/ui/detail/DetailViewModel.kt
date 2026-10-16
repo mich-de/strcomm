@@ -5,8 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.s4me.tv.engine.Channel
 import com.s4me.tv.engine.ChannelRegistry
 import com.s4me.tv.engine.ItemKind
+import com.s4me.tv.engine.Net
 import com.s4me.tv.engine.SiteTraffic
 import com.s4me.tv.engine.StreamItem
+import com.s4me.tv.engine.download.HlsMkvDownloader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +25,12 @@ sealed interface DetailUiState {
   data class Error(val message: String) : DetailUiState
 }
 
+/** (display name, language code) per audio/subtitle rendition — "le lingue audio disponibili e
+ *  sottotitoli disponibili" on the title page, read from the same HLS master playlist the download
+ *  feature already parses (HlsMkvDownloader.plan — the master + each audio rendition's own small
+ *  playlist, no segment/subtitle-file fetches, so this costs a few small requests, not a download). */
+data class AvailableTracks(val audio: List<Pair<String, String?>>, val subtitles: List<Pair<String, String?>>)
+
 /** Titles sharing [base]'s first catalogue genre, without [base] itself. Empty when no genre matches. */
 private suspend fun similarTo(channel: Channel, base: StreamItem): List<StreamItem> {
   val names = base.genres?.split(",")?.map { it.trim() }.orEmpty()
@@ -35,6 +43,16 @@ private suspend fun similarTo(channel: Channel, base: StreamItem): List<StreamIt
     .filter { it.url != base.url && (it.kind == ItemKind.MOVIE || it.kind == ItemKind.SERIES) }
     .take(12)
 }
+
+/** Reads a source's HLS master playlist for what languages it carries, without downloading
+ *  anything — never throws (a title with no readable playlist just shows nothing). */
+private suspend fun readAvailableTracks(source: StreamItem): AvailableTracks? =
+  withContext(Dispatchers.IO) {
+    runCatching {
+      val plan = HlsMkvDownloader(Net.client, mapOf("Referer" to (source.referer ?: "https://vixcloud.co/"))).plan(source.url)
+      AvailableTracks(plan.audioTracks, plan.subtitleTracks)
+    }.getOrNull()
+  }
 
 class DetailViewModel(private val item: StreamItem) : ViewModel() {
   private val _uiState = MutableStateFlow<DetailUiState>(DetailUiState.Loading)
@@ -54,6 +72,11 @@ class DetailViewModel(private val item: StreamItem) : ViewModel() {
   private val _similar = MutableStateFlow<List<StreamItem>>(emptyList())
   val similar: StateFlow<List<StreamItem>> = _similar.asStateFlow()
 
+  /** Null until read (or if the source has no native-HLS stream to read it from — a "webview"-only
+   *  or local download). */
+  private val _tracks = MutableStateFlow<AvailableTracks?>(null)
+  val tracks: StateFlow<AvailableTracks?> = _tracks.asStateFlow()
+
   init {
     viewModelScope.launch(Dispatchers.IO) {
       val channel = ChannelRegistry.byId(item.channelId)
@@ -70,6 +93,7 @@ class DetailViewModel(private val item: StreamItem) : ViewModel() {
           _uiState.value =
             if (sources.isEmpty()) DetailUiState.Error("Nessuna fonte trovata per questo contenuto")
             else DetailUiState.Success(enriched, sources)
+          sources.firstOrNull { it.serverId == "hls" }?.let { source -> launch { _tracks.value = readAvailableTracks(source) } }
         }
         .onFailure { _uiState.value = DetailUiState.Error(it.message ?: "Errore di caricamento") }
     }

@@ -321,12 +321,14 @@ private fun SectionRow(
     ) {
       itemsIndexed(section.items, key = { _, it -> it.channelId + it.url }) { index, item ->
         if (ranked) {
-          RankedPosterCard(item = item, rank = item.rank ?: (index + 1), onClick = { onOpen(item) })
+          RankedPosterCard(item = item, rank = item.rank ?: (index + 1), onClick = { onOpen(item) }, showLabel = true)
         } else {
           PosterCard(
             item = item,
             onClick = { onOpen(item) },
-            showLabel = section.channelId == CONTINUE_WATCHING_ID,
+            // Every row shows the title under the poster now ("in home sotto i titoli non ci sono i
+            // nomi") — clean artwork read as unlabelled, not deliberately minimal.
+            showLabel = true,
             onLongClick = onLongPress?.let { cb -> { cb(item) } },
             showBadges = false,
             onMenu = if (section.channelId == CONTINUE_WATCHING_ID) onLongPress?.let { cb -> { cb(item) } } else null,

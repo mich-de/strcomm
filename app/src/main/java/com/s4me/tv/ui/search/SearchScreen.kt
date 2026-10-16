@@ -244,7 +244,7 @@ private enum class SearchSort(val label: String) {
 private fun SearchSortRow(selected: SearchSort, onSelect: (SearchSort) -> Unit, modifier: Modifier = Modifier) {
   val primary = MaterialTheme.colorScheme.primary
   Row(modifier = modifier.padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-    SearchSort.entries.forEach { option ->
+    for (option in SearchSort.entries) {
       val isSelected = option == selected
       Surface(
         onClick = { onSelect(option) },

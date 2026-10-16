@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -49,6 +52,7 @@ import com.s4me.tv.engine.StreamItem
 import com.s4me.tv.engine.WatchProgressStore
 import com.s4me.tv.engine.youtubeVideoId
 import com.s4me.tv.navKeyFor
+import com.s4me.tv.ui.components.LanguageFlag
 import com.s4me.tv.ui.components.LoadingIndicator
 import com.s4me.tv.ui.components.NameChipsRow
 import com.s4me.tv.ui.components.PosterCard
@@ -61,6 +65,7 @@ fun DetailScreen(item: StreamItem, onNavigate: (NavKey) -> Unit, modifier: Modif
   val viewModel: DetailViewModel = viewModel(key = item.url) { DetailViewModel(item) }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   val related by viewModel.related.collectAsStateWithLifecycle()
+  val tracks by viewModel.tracks.collectAsStateWithLifecycle()
   // Renders from whatever's known so far: the nav-arg item immediately, then the same fields
   // upgrade in place once detail() enrichment (plot for movies, genres, cast, director) lands.
   val displayItem = (state as? DetailUiState.Success)?.item ?: item
@@ -98,7 +103,7 @@ fun DetailScreen(item: StreamItem, onNavigate: (NavKey) -> Unit, modifier: Modif
       }
     }
 
-    DetailContent(displayItem = displayItem, state = state, related = related, onNavigate = onNavigate)
+    DetailContent(displayItem = displayItem, state = state, related = related, tracks = tracks, onNavigate = onNavigate)
   }
 }
 
@@ -107,6 +112,7 @@ private fun DetailContent(
   displayItem: StreamItem,
   state: DetailUiState,
   related: List<StreamItem>,
+  tracks: AvailableTracks?,
   onNavigate: (NavKey) -> Unit,
 ) {
   // Order matters for TV: title + meta, then the (focusable) Guarda button, THEN the long text.
@@ -196,6 +202,7 @@ private fun DetailContent(
             modifier = Modifier.padding(top = 8.dp),
           )
         }
+        tracks?.let { TrackLanguagesSection(it, modifier = Modifier.padding(top = 12.dp)) }
         val externalIds = listOfNotNull(displayItem.tmdbId?.let { "TMDB: $it" }, displayItem.imdbId?.let { "IMDB: $it" })
         if (externalIds.isNotEmpty()) {
           Text(
@@ -219,6 +226,41 @@ private fun DetailContent(
     }
 
     item { Spacer(Modifier.height(40.dp)) }
+  }
+}
+
+/** "Le lingue audio disponibili e sottotitoli disponibili" — read from the HLS master playlist
+ *  (see readAvailableTracks in the ViewModel); absent entirely while still loading or for a title
+ *  with no native-HLS source to read it from. Informational, not a D-pad focus target — same
+ *  treatment as the TMDB/IMDB id line right below it. */
+@Composable
+private fun TrackLanguagesSection(tracks: AvailableTracks, modifier: Modifier = Modifier) {
+  if (tracks.audio.isEmpty() && tracks.subtitles.isEmpty()) return
+  Column(modifier = modifier.widthIn(max = 900.dp)) {
+    if (tracks.audio.isNotEmpty()) TrackPillRow("Audio disponibili", tracks.audio)
+    if (tracks.subtitles.isNotEmpty()) {
+      TrackPillRow("Sottotitoli disponibili", tracks.subtitles, modifier = Modifier.padding(top = if (tracks.audio.isNotEmpty()) 10.dp else 0.dp))
+    }
+  }
+}
+
+@Composable
+private fun TrackPillRow(label: String, items: List<Pair<String, String?>>, modifier: Modifier = Modifier) {
+  Column(modifier = modifier) {
+    Text(text = label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+      for ((name, lang) in items) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          modifier =
+            Modifier.background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 7.dp),
+        ) {
+          LanguageFlag(lang, name)
+          Spacer(Modifier.width(6.dp))
+          Text(text = name, style = MaterialTheme.typography.labelLarge, color = Color.White.copy(alpha = 0.85f))
+        }
+      }
+    }
   }
 }
 

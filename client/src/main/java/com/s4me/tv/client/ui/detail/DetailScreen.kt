@@ -15,11 +15,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -65,6 +67,7 @@ import com.s4me.tv.client.ui.components.BackCircleButton
 import com.s4me.tv.client.ui.components.ErrorScreen
 import com.s4me.tv.client.ui.components.GreyButton
 import com.s4me.tv.client.ui.components.IconAction
+import com.s4me.tv.client.ui.components.LanguageFlag
 import com.s4me.tv.client.ui.components.LocalTopInset
 import com.s4me.tv.client.ui.components.PlayButton
 import com.s4me.tv.client.ui.components.PosterCard
@@ -95,6 +98,7 @@ fun DetailScreen(
   val display by viewModel.preview.collectAsStateWithLifecycle()
   val related by viewModel.related.collectAsStateWithLifecycle()
   val similar by viewModel.similar.collectAsStateWithLifecycle()
+  val tracks by viewModel.tracks.collectAsStateWithLifecycle()
   val context = LocalContext.current
   val scroll = rememberScrollState()
   // Status bar height this page covers itself: the hero runs up under it (see LocalTopInset).
@@ -196,6 +200,7 @@ fun DetailScreen(
 
           NameRow("Cast", display.cast, onPersonSearch, Modifier.padding(top = 16.dp))
           NameRow("Regia", display.director, onPersonSearch, Modifier.padding(top = 8.dp))
+          tracks?.let { TrackLanguagesSection(it, modifier = Modifier.padding(top = 16.dp)) }
 
           if (related.isNotEmpty()) {
             SagaRow(items = related, onOpen = onOpen, modifier = Modifier.padding(top = 24.dp))
@@ -319,6 +324,42 @@ private fun UnderlineTabs(labels: List<String>, selected: Int, onSelect: (Int) -
 private fun SimilarGrid(items: List<StreamItem>, onOpen: (StreamItem) -> Unit, modifier: Modifier = Modifier) {
   FlowRow(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
     items.forEach { m -> PosterCard(item = m, onClick = { onOpen(m) }, width = 104.dp, showLabel = true, showBadges = false) }
+  }
+}
+
+/** "Le lingue audio disponibili e sottotitoli disponibili" — read from the HLS master playlist
+ *  (see [DetailViewModel.readAvailableTracks]); absent entirely while it's still loading or for a
+ *  title with no native-HLS source to read it from. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TrackLanguagesSection(tracks: AvailableTracks, modifier: Modifier = Modifier) {
+  if (tracks.audio.isEmpty() && tracks.subtitles.isEmpty()) return
+  Column(modifier = modifier) {
+    if (tracks.audio.isNotEmpty()) TrackPillRow("Audio disponibili", tracks.audio)
+    if (tracks.subtitles.isNotEmpty()) TrackPillRow("Sottotitoli disponibili", tracks.subtitles, modifier = Modifier.padding(top = if (tracks.audio.isNotEmpty()) 14.dp else 0.dp))
+  }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TrackPillRow(label: String, items: List<Pair<String, String?>>, modifier: Modifier = Modifier) {
+  Column(modifier = modifier) {
+    Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    FlowRow(modifier = Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      items.forEach { (name, lang) ->
+        AssistChip(
+          onClick = {},
+          shape = RoundedCornerShape(50),
+          label = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              LanguageFlag(lang, name)
+              Spacer(Modifier.width(6.dp))
+              Text(name)
+            }
+          },
+        )
+      }
+    }
   }
 }
 

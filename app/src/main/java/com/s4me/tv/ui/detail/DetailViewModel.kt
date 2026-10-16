@@ -3,12 +3,15 @@ package com.s4me.tv.ui.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.s4me.tv.engine.ChannelRegistry
+import com.s4me.tv.engine.Net
 import com.s4me.tv.engine.StreamItem
+import com.s4me.tv.engine.download.HlsMkvDownloader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed interface DetailUiState {
   data object Loading : DetailUiState
@@ -18,6 +21,23 @@ sealed interface DetailUiState {
   data class Error(val message: String) : DetailUiState
 }
 
+/** (display name, language code) per audio/subtitle rendition — "le lingue audio disponibili e
+ *  sottotitoli disponibili" on the title page, read from the same HLS master playlist the touch
+ *  app's download feature parses (HlsMkvDownloader.plan — the master + each audio rendition's own
+ *  small playlist, no segment/subtitle-file fetches). */
+data class AvailableTracks(val audio: List<Pair<String, String?>>, val subtitles: List<Pair<String, String?>>)
+
+/** Reads a source's HLS master playlist for what languages it carries, without downloading
+ *  anything — never throws (a title with no readable playlist, or a "webview"-only source, just
+ *  shows nothing). */
+private suspend fun readAvailableTracks(source: StreamItem): AvailableTracks? =
+  withContext(Dispatchers.IO) {
+    runCatching {
+      val plan = HlsMkvDownloader(Net.client, mapOf("Referer" to (source.referer ?: "https://vixcloud.co/"))).plan(source.url)
+      AvailableTracks(plan.audioTracks, plan.subtitleTracks)
+    }.getOrNull()
+  }
+
 class DetailViewModel(private val item: StreamItem) : ViewModel() {
   private val _uiState = MutableStateFlow<DetailUiState>(DetailUiState.Loading)
   val uiState: StateFlow<DetailUiState> = _uiState.asStateFlow()
@@ -26,6 +46,9 @@ class DetailViewModel(private val item: StreamItem) : ViewModel() {
    *  items. Loads independently of the play sources and stays empty for a standalone film. */
   private val _related = MutableStateFlow<List<StreamItem>>(emptyList())
   val related: StateFlow<List<StreamItem>> = _related.asStateFlow()
+
+  private val _tracks = MutableStateFlow<AvailableTracks?>(null)
+  val tracks: StateFlow<AvailableTracks?> = _tracks.asStateFlow()
 
   init {
     viewModelScope.launch(Dispatchers.IO) {
@@ -46,6 +69,7 @@ class DetailViewModel(private val item: StreamItem) : ViewModel() {
             return@onSuccess
           }
           _uiState.value = DetailUiState.Success(enriched, sources)
+          sources.firstOrNull { it.serverId == "hls" }?.let { source -> launch { _tracks.value = readAvailableTracks(source) } }
         }
         .onFailure { _uiState.value = DetailUiState.Error(it.message ?: "Errore di caricamento") }
     }

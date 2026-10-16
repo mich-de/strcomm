@@ -466,7 +466,7 @@ private fun HeroCarousel(
         horizontalArrangement = Arrangement.spacedBy(7.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        heroes.indices.forEach { i ->
+        for (i in heroes.indices) {
           Box(
             modifier =
               Modifier.size(if (i == safeIndex) 9.dp else 6.dp)

@@ -42,6 +42,14 @@ class HlsDownloadPlan internal constructor(
   val subtitleNames: List<String>
     get() = subtitles.map { it.name }
 
+  /** (display name, ISO-ish language code) per rendition — the pairing the Detail page's "Lingue
+   *  disponibili" reads to show a flag next to each name (see LanguageFlag in both apps' UI). */
+  val audioTracks: List<Pair<String, String?>>
+    get() = audio.map { it.first.name to it.first.language }
+
+  val subtitleTracks: List<Pair<String, String?>>
+    get() = subtitles.map { it.name to it.language }
+
   private companion object {
     const val FALLBACK_VIDEO_BPS = 2_000_000L
     const val AUDIO_BPS = 192_000L

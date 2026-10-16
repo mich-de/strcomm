@@ -53,12 +53,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
@@ -79,6 +81,7 @@ import com.s4me.tv.engine.WatchStatsStore
 import com.s4me.tv.remote.PlaybackCommand
 import com.s4me.tv.remote.PlaybackControlBridge
 import com.s4me.tv.remote.PlaybackStatus
+import com.s4me.tv.ui.components.LanguageFlag
 import com.s4me.tv.ui.components.LoadingIndicator
 import com.s4me.tv.ui.components.Symbol
 import java.io.ByteArrayInputStream
@@ -237,6 +240,7 @@ private fun playbackOrigin(item: StreamItem): StreamItem? =
     )
   }
 
+@androidx.annotation.OptIn(UnstableApi::class) // OkHttpDataSource — same pattern as :client's player
 @Composable
 private fun NativeHlsPlayer(
   item: StreamItem,
@@ -259,6 +263,10 @@ private fun NativeHlsPlayer(
   var videoInfo by remember(item.url) { mutableStateOf<String?>(null) }
   var showTracksMenu by remember(item.url) { mutableStateOf(false) }
   var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
+  // Latches once a forced-Italian subtitle has been auto-selected for this item, so later
+  // onTracksChanged calls (ExoPlayer refines track info over several calls) don't keep reapplying it
+  // and fighting a choice the viewer then makes from TracksMenu.
+  var forcedApplied by remember(item.url) { mutableStateOf(false) }
 
   // The remote-control legend is only useful for the first moment on screen — leave it up during
   // actual viewing and it's just a caption burned into the movie.
@@ -292,6 +300,11 @@ private fun NativeHlsPlayer(
           .setDefaultRequestProperties(mapOf("Referer" to (item.referer ?: "https://vixcloud.co/")))
       val mediaSource = HlsMediaSource.Factory(dataSourceFactory).createMediaSource(MediaItem.fromUri(item.url))
       ExoPlayer.Builder(context).build().apply {
+        // Italian audio + Italian subtitles as the language preference (mirrors :client); the
+        // forced-subtitle auto-pick below then narrows the subtitle choice to a forced track when
+        // one exists — subtitles otherwise default off (see TracksMenu's "Disattivati").
+        trackSelectionParameters =
+          trackSelectionParameters.buildUpon().setPreferredAudioLanguage("it").setPreferredTextLanguage("it").build()
         addListener(
           object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
@@ -301,6 +314,12 @@ private fun NativeHlsPlayer(
 
             override fun onPlaybackStateChanged(playbackState: Int) {
               if (playbackState == Player.STATE_ENDED) onEnded()
+            }
+
+            override fun onTracksChanged(t: Tracks) {
+              if (!forcedApplied) {
+                selectForcedSubtitle(this@apply, t)?.let { forcedApplied = true }
+              }
             }
 
             override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -530,7 +549,8 @@ private fun NativeHlsPlayer(
 /**
  * Audio-language and subtitle picker over the running player (remote's DOWN key). Reads the
  * currently loaded HLS renditions (vixcloud streams carry ita/eng audio and subtitles) and applies
- * a track override; subtitles can also be switched off entirely (their default).
+ * a track override; a forced Italian subtitle is pre-selected when the title has one (see
+ * selectForcedSubtitle below), otherwise subtitles start off and can be turned on from here.
  */
 @Composable
 private fun TracksMenu(exoPlayer: ExoPlayer, onClose: () -> Unit, modifier: Modifier = Modifier) {
@@ -568,7 +588,10 @@ private fun TracksMenu(exoPlayer: ExoPlayer, onClose: () -> Unit, modifier: Modi
           modifier = if (index == 0) Modifier.focusRequester(firstFocusRequester) else Modifier,
         ) {
           if (group.isSelected) { Symbol(R.drawable.ic_ms_check, size = ButtonDefaults.IconSize); Spacer(Modifier.width(ButtonDefaults.IconSpacing)) }
-          Text(trackDisplayName(group))
+          val name = trackDisplayName(group)
+          LanguageFlag(group.getTrackFormat(0).language, name)
+          Spacer(Modifier.width(8.dp))
+          Text(name)
         }
       }
 
@@ -585,7 +608,7 @@ private fun TracksMenu(exoPlayer: ExoPlayer, onClose: () -> Unit, modifier: Modi
           if (textDisabled || textGroups.none { it.isSelected }) { Symbol(R.drawable.ic_ms_check, size = ButtonDefaults.IconSize); Spacer(Modifier.width(ButtonDefaults.IconSpacing)) }
           Text("Disattivati")
         }
-        textGroups.forEach { group ->
+        for (group in textGroups) {
           Button(
             onClick = {
               applyTrackOverride(exoPlayer, group)
@@ -593,7 +616,10 @@ private fun TracksMenu(exoPlayer: ExoPlayer, onClose: () -> Unit, modifier: Modi
             }
           ) {
             if (group.isSelected) { Symbol(R.drawable.ic_ms_check, size = ButtonDefaults.IconSize); Spacer(Modifier.width(ButtonDefaults.IconSpacing)) }
-            Text(trackDisplayName(group))
+            val name = trackDisplayName(group)
+            LanguageFlag(group.getTrackFormat(0).language, name)
+            Spacer(Modifier.width(8.dp))
+            Text(name)
           }
         }
       }
@@ -613,6 +639,44 @@ private fun trackDisplayName(group: Tracks.Group): String {
   val language =
     format.language?.let { code -> Locale(code).getDisplayLanguage(Locale.ITALIAN).replaceFirstChar { it.uppercase() } }
   return format.label ?: language?.takeIf { it.isNotBlank() } ?: "Traccia"
+}
+
+/** Forced text track, preferring an Italian one outright, then one whose language matches the
+ *  selected audio, then any forced track. Returns the group it applied, or null if the title has
+ *  none. Mirrors :client's player — this one app had no default subtitle at all (TracksMenu's own
+ *  doc said "their default" was simply off). "Forced" isn't just the FORCED selection flag: this
+ *  source doesn't reliably set it on
+ *  these renditions (engine/download's HlsMkvDownloader hit the same thing on the same titles —
+ *  "forced tracks are never FORCED=YES — only recognisable by name/LANGUAGE") — a label or
+ *  language containing "forced" counts too, which is also what lets a languageless "Italian
+ *  [Forced]" rendition be recognised as Italian in the first place (LanguageFlag falls back the
+ *  same way). */
+private fun selectForcedSubtitle(player: ExoPlayer, tracks: Tracks): Tracks.Group? {
+  fun isForced(format: Format) =
+    (format.selectionFlags and C.SELECTION_FLAG_FORCED) != 0 ||
+      format.label?.contains("forced", ignoreCase = true) == true ||
+      format.language?.contains("forced", ignoreCase = true) == true
+  fun isItalian(format: Format) =
+    format.language?.let { it == "it" || it.startsWith("it-", ignoreCase = true) || it == "ita" } == true ||
+      format.label?.contains("italian", ignoreCase = true) == true
+  val audioLang =
+    tracks.groups
+      .firstOrNull { it.type == C.TRACK_TYPE_AUDIO && it.isSelected }
+      ?.let { g -> (0 until g.length).firstOrNull { g.isTrackSelected(it) }?.let { g.getTrackFormat(it).language } }
+  val forcedGroups = tracks.groups.filter { g -> g.type == C.TRACK_TYPE_TEXT && g.isSupported && isForced(g.getTrackFormat(0)) }
+  val pick =
+    forcedGroups.firstOrNull { isItalian(it.getTrackFormat(0)) }
+      ?: forcedGroups.firstOrNull { it.getTrackFormat(0).language == audioLang }
+      ?: forcedGroups.firstOrNull()
+      ?: return null
+  player.trackSelectionParameters =
+    player.trackSelectionParameters
+      .buildUpon()
+      .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+      .setOverrideForType(TrackSelectionOverride(pick.mediaTrackGroup, 0))
+      .build()
+  flushAfterTrackChange(player)
+  return pick
 }
 
 private fun applyTrackOverride(player: ExoPlayer, group: Tracks.Group) {
@@ -733,7 +797,7 @@ private fun WebViewPlayer(item: StreamItem, originItem: StreamItem?, modifier: M
                 super.onPageFinished(view, url)
                 Log.d(TAG, "onPageFinished($url): view=${view.width}x${view.height}, nudging playback")
                 val handler = Handler(Looper.getMainLooper())
-                listOf(400L, 1200L, 2500L).forEach { delay -> handler.postDelayed({ centerTap() }, delay) }
+                for (delay in listOf(400L, 1200L, 2500L)) handler.postDelayed({ centerTap() }, delay)
               }
 
               // Ad scripts on the embed page hijack the nudge tap and navigate the WHOLE WebView
