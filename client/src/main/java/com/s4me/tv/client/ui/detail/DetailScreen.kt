@@ -336,15 +336,15 @@ private fun SagaRow(items: List<StreamItem>, onOpen: (StreamItem) -> Unit, modif
   }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun NameRow(label: String, names: String?, onClick: (String) -> Unit, modifier: Modifier = Modifier) {
   names ?: return
   Column(modifier = modifier) {
     Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Row(
-      modifier = Modifier.horizontalScroll(rememberScrollState()).padding(top = 6.dp),
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    // Wraps instead of scrolling ("non mi piace che devo scrollare a destra" — a name trailing off
+    // at the edge with no "more" hint read as cut-off content, not a hint to swipe).
+    FlowRow(modifier = Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
       names.split(", ").forEach { name -> AssistChip(onClick = { onClick(name) }, label = { Text(name) }, shape = RoundedCornerShape(50)) }
     }
   }

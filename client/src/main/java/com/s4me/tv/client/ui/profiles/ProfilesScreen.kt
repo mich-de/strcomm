@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -69,44 +70,50 @@ fun ProfilesScreen(onPicked: (String) -> Unit, modifier: Modifier = Modifier, on
     profiles = ProfileScope.all(context)
   }
 
-  Column(modifier = modifier.fillMaxSize().padding(horizontal = 24.dp)) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-      if (onBack != null) {
-        IconButton(onClick = onBack) { Icon(ImageVector.vectorResource(R.drawable.ic_ms_arrow_back), contentDescription = "Indietro") }
+  // Shown both at launch (straight from MainActivity, no Scaffold under it — "screen selezione si
+  // vede male": Compose's default content colour outside a Surface is plain black, invisible on
+  // whatever the bare window paints behind it) and from Settings (inside ClientApp's Scaffold,
+  // which already supplies one). Owning a Surface here makes it correct either way.
+  Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
+      Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        if (onBack != null) {
+          IconButton(onClick = onBack) { Icon(ImageVector.vectorResource(R.drawable.ic_ms_arrow_back), contentDescription = "Indietro") }
+        }
+        Spacer(Modifier.weight(1f))
+        TextButton(onClick = { manage = !manage }) { Text(if (manage) "Fine" else "Gestisci") }
       }
-      Spacer(Modifier.weight(1f))
-      TextButton(onClick = { manage = !manage }) { Text(if (manage) "Fine" else "Gestisci") }
-    }
-    Text(
-      if (manage) "Gestisci profili" else "Chi sta guardando?",
-      style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-      textAlign = TextAlign.Center,
-      modifier = Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 32.dp),
-    )
-    LazyVerticalGrid(
-      columns = GridCells.Adaptive(minSize = 120.dp),
-      horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
-      verticalArrangement = Arrangement.spacedBy(24.dp),
-      contentPadding = PaddingValues(bottom = 24.dp),
-      modifier = Modifier.fillMaxSize(),
-    ) {
-      items(profiles, key = { it.id }) { profile ->
-        ProfileTile(
-          profile = profile,
-          manage = manage,
-          current = profile.id == ProfileScope.currentId(context),
-          onClick = {
-            if (manage) {
-              editing = profile
-            } else {
-              ProfileScope.switchTo(context, profile.id)
-              onPicked(profile.id)
-            }
-          },
-        )
-      }
-      if (manage && ProfileScope.canCreate(context)) {
-        item(key = "add") { AddTile(onClick = { creating = true }) }
+      Text(
+        if (manage) "Gestisci profili" else "Chi sta guardando?",
+        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 32.dp),
+      )
+      LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 120.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        modifier = Modifier.fillMaxSize(),
+      ) {
+        items(profiles, key = { it.id }) { profile ->
+          ProfileTile(
+            profile = profile,
+            manage = manage,
+            current = profile.id == ProfileScope.currentId(context),
+            onClick = {
+              if (manage) {
+                editing = profile
+              } else {
+                ProfileScope.switchTo(context, profile.id)
+                onPicked(profile.id)
+              }
+            },
+          )
+        }
+        if (manage && ProfileScope.canCreate(context)) {
+          item(key = "add") { AddTile(onClick = { creating = true }) }
+        }
       }
     }
   }
