@@ -58,9 +58,9 @@ import coil3.compose.AsyncImage
 import com.s4me.tv.client.R
 import com.s4me.tv.client.nav.isWideScreen
 import com.s4me.tv.client.ui.components.ErrorScreen
+import com.s4me.tv.client.ui.components.HomeSkeleton
 import com.s4me.tv.client.ui.components.GreyButton
 import com.s4me.tv.client.ui.components.ItemActionsSheet
-import com.s4me.tv.client.ui.components.LoadingScreen
 import com.s4me.tv.client.ui.components.LocalTopInset
 import com.s4me.tv.client.ui.components.PlayButton
 import com.s4me.tv.client.ui.components.PosterCard
@@ -95,7 +95,7 @@ fun HomeScreen(
   var menu by remember { mutableStateOf<Pair<HomeSection, StreamItem>?>(null) }
 
   when (val s = state) {
-    is HomeUiState.Loading -> LoadingScreen(modifier)
+    is HomeUiState.Loading -> HomeSkeleton(modifier)
     is HomeUiState.Error -> ErrorScreen(s.message, onRetry = viewModel::load, modifier = modifier)
     is HomeUiState.Success -> {
       val listState = rememberLazyListState()
