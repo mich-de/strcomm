@@ -1,6 +1,8 @@
 package com.s4me.tv.client.ui.settings
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -14,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -23,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -33,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.s4me.tv.client.R
 import com.s4me.tv.client.notifications.AvailabilityWorker
@@ -46,11 +52,13 @@ import com.s4me.tv.engine.AvailabilityReminderStore
 import com.s4me.tv.engine.BackupManager
 import com.s4me.tv.engine.CacheUtil
 import com.s4me.tv.engine.NewReleaseStore
+import com.s4me.tv.engine.AppUpdate
 import com.s4me.tv.engine.PERSONAL_USE_NOTICE
 import com.s4me.tv.engine.ProfileScope
 import com.s4me.tv.engine.SearchHistoryStore
 import com.s4me.tv.engine.Tmdb
 import com.s4me.tv.engine.TmdbApiKeyStore
+import com.s4me.tv.engine.UpdateChecker
 import com.s4me.tv.engine.WatchProgressStore
 import com.s4me.tv.engine.WatchStatsStore
 import com.s4me.tv.engine.WatchlistStore
@@ -114,6 +122,15 @@ fun SettingsScreen(
       }
     }
 
+  // "Hai installato?" / "possiamo prevedere che se l'app trova un update su github lo fa notare
+  // e lo installa?" — versions never move here (always 1.0.0, the v1.0.0 release's APKs are
+  // replaced in place), so UpdateChecker compares the release asset's own upload timestamp
+  // instead of a version number. ASSET_NAME must match this app's exact asset name on the release.
+  var checkingUpdate by remember { mutableStateOf(false) }
+  var availableUpdate by remember { mutableStateOf<AppUpdate?>(null) }
+  var downloadProgress by remember { mutableFloatStateOf(-1f) }
+  var downloading by remember { mutableStateOf(false) }
+
   Column(
     modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -121,6 +138,20 @@ fun SettingsScreen(
     Text("Impostazioni", style = MaterialTheme.typography.headlineSmall)
     val version = remember { appVersionName(context) }
     Text("StrComm $version · $PERSONAL_USE_NOTICE", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    FilledTonalButton(
+      enabled = !checkingUpdate,
+      onClick = {
+        checkingUpdate = true
+        scope.launch {
+          val update = withContext(Dispatchers.IO) { UpdateChecker.check(context, UPDATE_ASSET_NAME) }
+          checkingUpdate = false
+          if (update != null) availableUpdate = update
+          else Toast.makeText(context, "Hai già la build più recente", Toast.LENGTH_SHORT).show()
+        }
+      },
+    ) {
+      SymbolLabel(R.drawable.ic_ms_download, if (checkingUpdate) "Verifica in corso…" else "Verifica aggiornamenti")
+    }
     FilledTonalButton(onClick = onOpenProfiles) {
       SymbolLabel(R.drawable.ic_ms_account_circle, "Profilo: ${remember { ProfileScope.current(context).name }} · Cambia")
     }
@@ -287,6 +318,73 @@ fun SettingsScreen(
 
     Text("StrComm — client touch. Streaming da un unico sito di terze parti.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp))
   }
+
+  availableUpdate?.let { update ->
+    if (downloading) {
+      AlertDialog(
+        onDismissRequest = {},
+        title = { Text("Download in corso") },
+        text = {
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (downloadProgress >= 0f) {
+              androidx.compose.material3.LinearProgressIndicator(progress = { downloadProgress }, modifier = Modifier.fillMaxWidth())
+              Text("${(downloadProgress * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
+            } else {
+              CircularProgressIndicator()
+            }
+          }
+        },
+        confirmButton = {},
+      )
+    } else {
+      AlertDialog(
+        onDismissRequest = { UpdateChecker.markSeen(context, update); availableUpdate = null },
+        title = { Text("Aggiornamento disponibile") },
+        text = { Text("È stata pubblicata una build più recente di StrComm (${CacheUtil.formatSize(update.sizeBytes)}). Scaricarla e installarla ora?") },
+        confirmButton = {
+          FilledTonalButton(
+            onClick = {
+              downloading = true
+              downloadProgress = -1f
+              scope.launch {
+                val file =
+                  runCatching {
+                    withContext(Dispatchers.IO) { UpdateChecker.download(context, update) { p -> withContext(Dispatchers.Main) { downloadProgress = p } } }
+                  }.getOrNull()
+                downloading = false
+                UpdateChecker.markSeen(context, update)
+                availableUpdate = null
+                if (file != null) installApk(context, file) else Toast.makeText(context, "Download non riuscito", Toast.LENGTH_SHORT).show()
+              }
+            }
+          ) {
+            Text("Scarica e installa")
+          }
+        },
+        dismissButton = {
+          FilledTonalButton(onClick = { UpdateChecker.markSeen(context, update); availableUpdate = null }) { Text("Più tardi") }
+        },
+      )
+    }
+  }
+}
+
+/** This app's own asset name on the GitHub release — must match exactly what `gh release upload`
+ *  names it, or UpdateChecker never finds a match. */
+private const val UPDATE_ASSET_NAME = "StrComm-Mobile-Tablet-v1.0.0.apk"
+
+/** Fires the system's own APK-install flow via a content:// URI (FileProvider — a bare file:// path
+ *  is blocked on API 24+). Android still shows its own "install unknown apps" confirmation if this
+ *  app hasn't been granted it yet; that's the OS's own gate, not something to route around. */
+private fun installApk(context: android.content.Context, file: java.io.File) {
+  val uri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+  val intent =
+    Intent(Intent.ACTION_VIEW).apply {
+      setDataAndType(uri, "application/vnd.android.package-archive")
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+  runCatching { context.startActivity(intent) }
+    .onFailure { Toast.makeText(context, "Nessuna app per installare il pacchetto", Toast.LENGTH_SHORT).show() }
 }
 
 @Composable

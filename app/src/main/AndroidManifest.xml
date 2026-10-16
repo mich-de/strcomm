@@ -12,6 +12,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Settings' "Verifica aggiornamenti" installs the newer APK straight from the GitHub
+         release — the system still shows its own "install unknown apps" confirmation, this
+         permission only lets the app START that flow (see UpdateChecker/installApk). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature
         android:name="android.software.leanback"
@@ -55,6 +59,18 @@
             android:name=".remote.RemoteControlService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!-- content:// access to the downloaded update APK in cacheDir/updates/ — the install
+             Intent can't target a bare file:// path on API 24+. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

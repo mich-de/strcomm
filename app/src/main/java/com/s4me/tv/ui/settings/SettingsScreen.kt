@@ -1,6 +1,8 @@
 package com.s4me.tv.ui.settings
 
 import android.app.Application
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -12,11 +14,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +31,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavKey
 import androidx.tv.material3.Button
@@ -34,12 +39,14 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.s4me.tv.R
 import com.s4me.tv.TvGuide
+import com.s4me.tv.engine.AppUpdate
 import com.s4me.tv.engine.BackupManager
 import com.s4me.tv.engine.CacheUtil
 import com.s4me.tv.engine.PERSONAL_USE_NOTICE
 import com.s4me.tv.engine.SearchHistoryStore
 import com.s4me.tv.engine.Tmdb
 import com.s4me.tv.engine.TmdbApiKeyStore
+import com.s4me.tv.engine.UpdateChecker
 import com.s4me.tv.engine.WatchProgressStore
 import com.s4me.tv.engine.WatchStatsStore
 import com.s4me.tv.engine.WatchlistStore
@@ -75,6 +82,17 @@ fun SettingsScreen(onNavigate: (NavKey) -> Unit = {}, modifier: Modifier = Modif
 
   fun toast(message: String) = Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
 
+  // "Hai installato?" / "possiamo prevedere che se l'app trova un update su github lo fa notare e
+  // lo installa?" — versions never move here (always 1.0.0, the v1.0.0 release's APKs are replaced
+  // in place), so UpdateChecker compares the release asset's own upload timestamp instead of a
+  // version number. Inline, not a dialog: this file has no popup/overlay pattern elsewhere and a
+  // D-pad-only app is simpler without one to focus-trap into.
+  var checkingUpdate by remember { mutableStateOf(false) }
+  var availableUpdate by remember { mutableStateOf<AppUpdate?>(null) }
+  var downloadingUpdate by remember { mutableStateOf(false) }
+  var updateProgress by remember { mutableFloatStateOf(-1f) }
+
+
   val application = context.applicationContext as Application
   val exportLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -109,6 +127,58 @@ fun SettingsScreen(onNavigate: (NavKey) -> Unit = {}, modifier: Modifier = Modif
 
     Button(onClick = { onNavigate(TvGuide) }, modifier = Modifier.focusRequester(firstFocusRequester)) {
       SymbolLabel(R.drawable.ic_ms_live_tv, "Guida TV completa")
+    }
+
+    val update = availableUpdate
+    if (update != null) {
+      Text(
+        text =
+          if (downloadingUpdate) {
+            if (updateProgress >= 0f) "Download in corso… ${(updateProgress * 100).toInt()}%" else "Download in corso…"
+          } else {
+            "Aggiornamento disponibile (${CacheUtil.formatSize(update.sizeBytes)})"
+          },
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      if (downloadingUpdate && updateProgress >= 0f) {
+        LinearProgressIndicator(progress = { updateProgress }, modifier = Modifier.fillMaxWidth(0.5f))
+      }
+      if (!downloadingUpdate) {
+        Button(
+          onClick = {
+            downloadingUpdate = true
+            updateProgress = -1f
+            scope.launch {
+              val file =
+                runCatching {
+                  withContext(Dispatchers.IO) { UpdateChecker.download(context, update) { p -> withContext(Dispatchers.Main) { updateProgress = p } } }
+                }.getOrNull()
+              downloadingUpdate = false
+              UpdateChecker.markSeen(context, update)
+              availableUpdate = null
+              if (file != null) installApk(context, file) else toast("Download non riuscito")
+            }
+          }
+        ) {
+          SymbolLabel(R.drawable.ic_ms_download, "Scarica e installa")
+        }
+      }
+    } else {
+      Button(
+        enabled = !checkingUpdate,
+        onClick = {
+          checkingUpdate = true
+          scope.launch {
+            val found = withContext(Dispatchers.IO) { UpdateChecker.check(context, UPDATE_ASSET_NAME) }
+            checkingUpdate = false
+            availableUpdate = found
+            if (found == null) toast("Hai già la build più recente")
+          }
+        },
+      ) {
+        SymbolLabel(R.drawable.ic_ms_download, if (checkingUpdate) "Verifica in corso…" else "Verifica aggiornamenti")
+      }
     }
 
     Text(
@@ -274,6 +344,25 @@ fun SettingsScreen(onNavigate: (NavKey) -> Unit = {}, modifier: Modifier = Modif
       modifier = Modifier.padding(top = 8.dp),
     )
   }
+}
+
+/** This app's own asset name on the GitHub release — must match exactly what `gh release upload`
+ *  names it, or UpdateChecker never finds a match. */
+private const val UPDATE_ASSET_NAME = "StrComm-TVBox-FireStick-v1.0.0.apk"
+
+/** Fires the system's own APK-install flow via a content:// URI (FileProvider — a bare file:// path
+ *  is blocked on API 24+). Fire OS, like stock Android, still shows its own "install unknown apps"
+ *  confirmation if this app hasn't been granted it yet — that's the OS's own gate, not something to
+ *  route around. */
+private fun installApk(context: android.content.Context, file: java.io.File) {
+  val uri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+  val intent =
+    Intent(Intent.ACTION_VIEW).apply {
+      setDataAndType(uri, "application/vnd.android.package-archive")
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+  runCatching { context.startActivity(intent) }
+    .onFailure { Toast.makeText(context, "Nessuna app per installare il pacchetto", Toast.LENGTH_SHORT).show() }
 }
 
 /** First non-loopback IPv4 address, Wi-Fi or Ethernet — WifiManager.connectionInfo only covers

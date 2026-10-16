@@ -10,6 +10,10 @@
     <!-- Downloads run as a WorkManager foreground worker (dataSync), so they survive leaving the app. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- "Verifica aggiornamenti" in Settings installs the newer APK straight from the GitHub
+         release — the system still shows its own "install unknown apps" confirmation, this
+         permission only lets the app START that flow (see UpdateChecker/installApk). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Package visibility (Android 11+) for the search field's voice button: without this, asking
          "is there a speech recogniser?" always answers no. Search uses the system recogniser's own UI,
@@ -46,6 +50,18 @@
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
+
+        <!-- content:// access to the downloaded update APK in cacheDir/updates/ — the install
+             Intent can't target a bare file:// path on API 24+. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>
