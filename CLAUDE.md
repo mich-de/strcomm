@@ -217,13 +217,15 @@ The source site's own `score` is a stale second-hand TMDB import. `Channel.detai
   flag *emoji* render inconsistently across OEM keyboards (this app's own Samsung target devices
   among them). Rasterised once (`rsvg-convert`) from flag-icons (MIT; licence at
   `third_party_licenses/flag-icons-MIT.txt`, repo root — the one shared-asset licence that lives
-  outside either app's own `third_party_licenses/`) into `res/drawable-nodpi/flag_<cc>.png`. Keyed on
-  the normalised ISO-639-1 language code (`Locale(code).language`) first; a "\[Forced\]" rendition on
-  this source routinely has **no language code at all** ("I forced mancano le bandiere" — verified
-  live: the TracksMenu screenshot showed flags on every CC track and none on either \[Forced\] one),
-  so `LanguageFlag` also takes the track's own `name`/label and falls back to matching its leading
-  English word ("Italian", "English", …) against a small map — the same fallback
-  `selectForcedSubtitle` below needs for the same reason.
+  outside either app's own `third_party_licenses/`) into `res/drawable-nodpi/flag_<cc>.png`. Matches
+  the track's own `name`/label first — its leading English word ("Italian", "English", …) against a
+  small map — and only falls back to the normalised ISO-639-1 language code
+  (`Locale(code).language`) for a name it doesn't recognise. The name wins deliberately, checked live
+  against this source's own data twice: a "\[Forced\]" rendition routinely has **no language code at
+  all** ("I forced mancano le bandiere" — the TracksMenu screenshot showed flags on every CC track and
+  none on either \[Forced\] one), and on one title a "German" rendition's own LANGUAGE attribute was
+  "es" — wrong flag either way unless the (always-correct-so-far) name is tried first.
+  `selectForcedSubtitle` below needs the same name fallback, for the same reason.
 - `detail(item, withRatings = false)` skips the rating/trailer lookups — used by both apps'
   `SearchViewModel.verifyCredited`, which fans `detail()` out over ~45 candidates per name tap to
   check real cast/director credits (the site's search is fuzzy text, not a credit lookup).
