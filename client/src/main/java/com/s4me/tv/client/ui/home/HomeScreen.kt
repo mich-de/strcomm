@@ -292,7 +292,9 @@ private fun GenreChips(genres: List<GenreOption>, onOpenGenre: (Int) -> Unit) {
     contentPadding = PaddingValues(horizontal = 16.dp),
     horizontalArrangement = Arrangement.spacedBy(8.dp),
   ) {
-    items(genres, key = { it.id }) { g -> AssistChip(onClick = { onOpenGenre(g.id) }, label = { Text(g.name) }) }
+    // Pill-shaped, like TypePill above — one consistent chip language instead of Material's
+    // default 8dp-rounded rectangle, which reads as an unstyled stock component next to it.
+    items(genres, key = { it.id }) { g -> AssistChip(onClick = { onOpenGenre(g.id) }, label = { Text(g.name) }, shape = RoundedCornerShape(50)) }
   }
 }
 
