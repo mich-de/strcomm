@@ -73,9 +73,13 @@ private val ENGLISH_NAME_TO_CODE =
   )
 
 private fun languageFlagRes(code: String?, name: String?): Int? {
-  languageFlagRes(code)?.let { return it }
-  val word = name?.trim()?.substringBefore(' ')?.lowercase() ?: return null
-  return ENGLISH_NAME_TO_CODE[word]?.let { languageFlagRes(it) }
+  // The name wins when it's recognised: checked live against this source's own data (Animals,
+  // 2026-10-16) — a "German" subtitle rendition's own LANGUAGE attribute was "es", not "de" (wrong
+  // flag otherwise), while every NAME seen so far has been a plain, correct English language word.
+  // Falls back to the code for a language whose name isn't in the small map above.
+  val word = name?.trim()?.substringBefore(' ')?.lowercase()
+  word?.let { ENGLISH_NAME_TO_CODE[it] }?.let { return languageFlagRes(it) }
+  return languageFlagRes(code)
 }
 
 /** Renders nothing for a language with no mapped flag, so callers can place it unconditionally.
