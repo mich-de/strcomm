@@ -172,6 +172,18 @@ private fun HeroPager(heroes: List<StreamItem>, topInset: Dp, onOpen: (StreamIte
   val fullHeight = heroHeight + topInset
   val context = LocalContext.current
   val watchlistStore = remember { WatchlistStore(context) }
+  // Auto-rotates the billboard every 7 s, like a streaming app's Home picks its own hero instead of
+  // asking the viewer to swipe (no dot row either — see below). Skips a cycle rather than fighting an
+  // in-progress manual swipe; a manual swipe otherwise just moves the next 7 s window with it.
+  LaunchedEffect(heroes.size) {
+    if (heroes.size <= 1) return@LaunchedEffect
+    while (true) {
+      delay(7000)
+      if (!pagerState.isScrollInProgress) {
+        pagerState.animateScrollToPage((pagerState.currentPage + 1) % heroes.size, animationSpec = tween(900))
+      }
+    }
+  }
   HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth().height(fullHeight)) { page ->
     val hero = heroes[page]
     var inList by remember(hero.url) { mutableStateOf(watchlistStore.contains(hero.url)) }
@@ -245,22 +257,6 @@ private fun HeroPager(heroes: List<StreamItem>, topInset: Dp, onOpen: (StreamIte
           )
         }
       }
-      if (heroes.size > 1) {
-        Row(
-          modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp),
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-          heroes.indices.forEach { i ->
-            Box(
-              modifier =
-                Modifier.height(6.dp)
-                  .width(if (i == pagerState.currentPage) 18.dp else 6.dp)
-                  .clip(RoundedCornerShape(3.dp))
-                  .background(if (i == pagerState.currentPage) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.4f))
-            )
-          }
-        }
-      }
     }
   }
 }
@@ -319,7 +315,7 @@ private fun SectionRow(
     }
     LazyRow(
       contentPadding = PaddingValues(horizontal = 16.dp),
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
       itemsIndexed(section.items, key = { _, it -> it.channelId + it.url }) { index, item ->
         if (ranked) {

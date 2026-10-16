@@ -310,7 +310,7 @@ private fun TrendingRow(item: StreamItem, onClick: () -> Unit) {
       modifier =
         Modifier.width(132.dp)
           .aspectRatio(16f / 9f)
-          .clip(RoundedCornerShape(8.dp))
+          .clip(RoundedCornerShape(4.dp))
           .background(MaterialTheme.colorScheme.surfaceVariant),
     )
     Text(

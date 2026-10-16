@@ -100,7 +100,7 @@ private fun NewHotCard(item: StreamItem, onOpen: (StreamItem) -> Unit, watchlist
       model = item.cover ?: item.backdrop ?: item.thumbnail,
       contentDescription = item.title,
       contentScale = ContentScale.Crop,
-      modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+      modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(4.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
     )
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
       Column(modifier = Modifier.weight(1f)) {

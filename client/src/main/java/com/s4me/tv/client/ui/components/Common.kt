@@ -94,7 +94,7 @@ fun PosterCard(
         modifier =
           Modifier.fillMaxWidth()
             .aspectRatio(2f / 3f)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(4.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
       )
       // Year (top-left) and score (top-right) badges, mirroring the TV app's poster cards.

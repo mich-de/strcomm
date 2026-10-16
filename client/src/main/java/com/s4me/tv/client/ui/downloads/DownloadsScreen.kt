@@ -229,7 +229,7 @@ private fun CompletedRow(record: DownloadRecord, onPlay: () -> Unit, onOpenElsew
       model = record.item.backdrop ?: record.item.cover ?: record.item.thumbnail,
       contentDescription = null,
       contentScale = ContentScale.Crop,
-      modifier = Modifier.width(112.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+      modifier = Modifier.width(112.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(4.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
     )
     Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
       Text(

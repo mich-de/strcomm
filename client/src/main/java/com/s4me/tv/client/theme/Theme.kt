@@ -67,5 +67,5 @@ fun StrCommClientTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composab
       WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !dark
     }
   }
-  MaterialTheme(colorScheme = colors, content = content)
+  MaterialTheme(colorScheme = colors, typography = StrCommTypography, content = content)
 }
