@@ -68,6 +68,12 @@ fun TrailerView(youtubeId: String, muted: Boolean, onPlaying: () -> Unit, modifi
     }
   }
 
+  // YouTube shows automatic captions over a trailer; in a hero they ended up as faint text under the
+  // buttons. They're a preview's decoration at best, so they're hidden once it plays.
+  LaunchedEffect(playing) {
+    if (playing) webView.evaluateJavascript(HIDE_CAPTIONS_JS, null)
+  }
+
   // Applies the mute state to the embedded player once it exists, and whenever it changes.
   LaunchedEffect(muted, playing) {
     if (playing) {
@@ -103,6 +109,12 @@ private fun trailerWebView(context: Context, youtubeId: String): WebView =
 private suspend fun WebView.evaluate(script: String): String? = suspendCancellableCoroutine { cont ->
   evaluateJavascript(script) { cont.resume(it) }
 }
+
+/** Hides the caption layer (CSS, so it holds however the player redraws) and asks the player to drop its
+ *  captions module. Both are best-effort: if YouTube renames either, captions just stay as they were. */
+private const val HIDE_CAPTIONS_JS =
+  "(function(){var s=document.createElement('style');s.textContent='.ytp-caption-window-container{display:none!important}';" +
+    "document.head.appendChild(s);var p=document.getElementById('movie_player');if(p&&p.unloadModule)p.unloadModule('captions');})()"
 
 /** Runs in the embed page itself: `movie_player.getPlayerState()` is 1 while playing, and `.ytp-error`
  *  is the card YouTube shows when a video can't be played here. */
