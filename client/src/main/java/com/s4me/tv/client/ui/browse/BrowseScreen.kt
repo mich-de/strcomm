@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -188,6 +189,7 @@ private fun FilterDropdown(label: String, current: String?, options: List<Pair<S
       selected = current != null,
       onClick = { open = true },
       label = { Text(if (current != null) "$label: $current" else label) },
+      shape = RoundedCornerShape(50),
     )
     DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
       options.forEach { (text, value) ->

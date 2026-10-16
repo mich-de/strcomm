@@ -4,6 +4,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,7 +38,7 @@ fun SortChips(selected: ListSort, onSelect: (ListSort) -> Unit, modifier: Modifi
     horizontalArrangement = Arrangement.spacedBy(8.dp),
   ) {
     ListSort.entries.forEach { option ->
-      FilterChip(selected = option == selected, onClick = { onSelect(option) }, label = { Text(option.label) })
+      FilterChip(selected = option == selected, onClick = { onSelect(option) }, label = { Text(option.label) }, shape = RoundedCornerShape(50))
     }
   }
 }

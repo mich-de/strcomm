@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -344,7 +345,7 @@ private fun NameRow(label: String, names: String?, onClick: (String) -> Unit, mo
       modifier = Modifier.horizontalScroll(rememberScrollState()).padding(top = 6.dp),
       horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      names.split(", ").forEach { name -> AssistChip(onClick = { onClick(name) }, label = { Text(name) }) }
+      names.split(", ").forEach { name -> AssistChip(onClick = { onClick(name) }, label = { Text(name) }, shape = RoundedCornerShape(50)) }
     }
   }
 }
