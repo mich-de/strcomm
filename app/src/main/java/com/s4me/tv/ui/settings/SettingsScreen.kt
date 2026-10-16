@@ -32,10 +32,12 @@ import androidx.navigation3.runtime.NavKey
 import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.s4me.tv.R
 import com.s4me.tv.TvGuide
 import com.s4me.tv.engine.BackupManager
 import com.s4me.tv.engine.CacheUtil
 import com.s4me.tv.engine.PERSONAL_USE_NOTICE
+import com.s4me.tv.engine.SearchHistoryStore
 import com.s4me.tv.engine.Tmdb
 import com.s4me.tv.engine.TmdbApiKeyStore
 import com.s4me.tv.engine.WatchProgressStore
@@ -43,7 +45,7 @@ import com.s4me.tv.engine.WatchStatsStore
 import com.s4me.tv.engine.WatchlistStore
 import com.s4me.tv.engine.appVersionName
 import com.s4me.tv.remote.RemoteControlProtocol
-import com.s4me.tv.engine.SearchHistoryStore
+import com.s4me.tv.ui.components.SymbolLabel
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import kotlinx.coroutines.Dispatchers
@@ -106,7 +108,7 @@ fun SettingsScreen(onNavigate: (NavKey) -> Unit = {}, modifier: Modifier = Modif
     )
 
     Button(onClick = { onNavigate(TvGuide) }, modifier = Modifier.focusRequester(firstFocusRequester)) {
-      Text("📺  Guida TV completa")
+      SymbolLabel(R.drawable.ic_ms_live_tv, "Guida TV completa")
     }
 
     Text(
@@ -120,7 +122,7 @@ fun SettingsScreen(onNavigate: (NavKey) -> Unit = {}, modifier: Modifier = Modif
         toast("«Continua a guardare» svuotato")
       },
     ) {
-      Text("🗑  Svuota «Continua a guardare»")
+      SymbolLabel(R.drawable.ic_ms_delete, "Svuota «Continua a guardare»")
     }
     Button(
       onClick = {
@@ -128,7 +130,7 @@ fun SettingsScreen(onNavigate: (NavKey) -> Unit = {}, modifier: Modifier = Modif
         toast("«La mia lista» svuotata")
       }
     ) {
-      Text("🗑  Svuota «La mia lista»")
+      SymbolLabel(R.drawable.ic_ms_delete, "Svuota «La mia lista»")
     }
     Button(
       onClick = {
@@ -136,7 +138,7 @@ fun SettingsScreen(onNavigate: (NavKey) -> Unit = {}, modifier: Modifier = Modif
         toast("Cronologia ricerche cancellata")
       }
     ) {
-      Text("🗑  Cancella cronologia ricerche")
+      SymbolLabel(R.drawable.ic_ms_delete, "Cancella cronologia ricerche")
     }
     Button(
       onClick = {
@@ -153,7 +155,7 @@ fun SettingsScreen(onNavigate: (NavKey) -> Unit = {}, modifier: Modifier = Modif
       },
       enabled = !clearingCache,
     ) {
-      Text(if (clearingCache) "Pulizia in corso…" else "🧹  Pulisci cache (${CacheUtil.formatSize(cacheBytes)})")
+      if (clearingCache) Text("Pulizia in corso…") else SymbolLabel(R.drawable.ic_ms_cleaning_services, "Pulisci cache (${CacheUtil.formatSize(cacheBytes)})")
     }
 
     Spacer(Modifier.height(12.dp))
@@ -249,8 +251,8 @@ fun SettingsScreen(onNavigate: (NavKey) -> Unit = {}, modifier: Modifier = Modif
       color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
-      Button(onClick = { exportLauncher.launch("strcomm-backup.json") }) { Text("⬆  Esporta") }
-      Button(onClick = { importLauncher.launch(arrayOf("application/json")) }) { Text("⬇  Ripristina") }
+      Button(onClick = { exportLauncher.launch("strcomm-backup.json") }) { SymbolLabel(R.drawable.ic_ms_upload, "Esporta") }
+      Button(onClick = { importLauncher.launch(arrayOf("application/json")) }) { SymbolLabel(R.drawable.ic_ms_download, "Ripristina") }
     }
 
     Spacer(Modifier.height(12.dp))

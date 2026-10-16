@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.tv.material3.Button
 import androidx.tv.material3.Text
+import com.s4me.tv.R
 import com.s4me.tv.engine.StreamItem
 import com.s4me.tv.engine.WatchlistStore
 
@@ -20,6 +21,6 @@ fun WatchlistToggleButton(item: StreamItem, modifier: Modifier = Modifier) {
   val store = remember { WatchlistStore(context) }
   var inList by remember(item.url) { mutableStateOf(store.contains(item.url)) }
   Button(onClick = { inList = store.toggle(item) }, modifier = modifier) {
-    Text(if (inList) "✓  Nella lista" else "＋  La mia lista")
+    SymbolLabel(if (inList) R.drawable.ic_ms_check else R.drawable.ic_ms_add, if (inList) "Nella lista" else "La mia lista")
   }
 }

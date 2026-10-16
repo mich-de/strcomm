@@ -12,14 +12,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -39,6 +40,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,10 +51,19 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import com.s4me.tv.R
+import com.s4me.tv.engine.ChannelRegistry
+import com.s4me.tv.engine.GenreOption
+import com.s4me.tv.engine.StreamItem
 import com.s4me.tv.navKeyFor
+import com.s4me.tv.ui.components.CoverCard
 import com.s4me.tv.ui.components.LoadingIndicator
 import com.s4me.tv.ui.components.POSTER_WIDTH
 import com.s4me.tv.ui.components.PosterCard
+import com.s4me.tv.ui.components.Symbol
+import com.s4me.tv.ui.components.SymbolLabel
+import com.s4me.tv.ui.home.HomeSnapshot
+import java.text.Normalizer
 
 @Composable
 fun SearchScreen(
@@ -65,12 +76,27 @@ fun SearchScreen(
   var query by remember { mutableStateOf(initialQuery.orEmpty()) }
   var sortMode by remember { mutableStateOf(SearchSort.RELEVANCE) }
   val state by viewModel.uiState.collectAsStateWithLifecycle()
+  val genres by viewModel.genres.collectAsStateWithLifecycle()
+  val catalogRoot = remember { ChannelRegistry.all.firstOrNull()?.catalogRoot() }
+  // Genres whose name contains what's typed — local and instant, shown between the field and the
+  // title results (Netflix's search is scoped to "titles, genres or people"; ours now is too).
+  val genreMatches =
+    remember(query, genres) {
+      val q = fold(query)
+      if (q.length < 2) emptyList() else genres.filter { fold(it.name).contains(q) }.take(6)
+    }
+  fun openGenre(id: Int) {
+    catalogRoot?.let { onNavigate(navKeyFor(it.copy(extra = "genre=$id"))) }
+  }
   val fieldFocusRequester = remember { FocusRequester() }
   var fieldFocused by remember { mutableStateOf(false) }
   // The text field otherwise swallows D-pad DOWN (it stays put on the field), so results and
   // history were unreachable with the remote — the classic TV "search box is a dead end" trap.
   // This requester is attached to the first content item below; DOWN on the field jumps to it.
+  // With genre matches showing, that first item is the first genre button; otherwise the content
+  // below carries it (see [firstModifier]).
   val contentFocusRequester = remember { FocusRequester() }
+  val firstModifier = if (genreMatches.isEmpty()) Modifier.focusRequester(contentFocusRequester) else Modifier
 
   LaunchedEffect(Unit) { runCatching { fieldFocusRequester.requestFocus() } }
   // Arriving from an actor/director tap on Detail (see DetailScreen's Cast/Regia rows) — jump
@@ -95,7 +121,7 @@ fun SearchScreen(
   Column(modifier = modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 40.dp)) {
     Text(text = "Cerca", style = MaterialTheme.typography.headlineMedium)
     Text(
-      text = "Film e serie TV su StreamingCommunity",
+      text = "Titoli, generi o persone",
       style = MaterialTheme.typography.bodyMedium,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
       modifier = Modifier.padding(top = 4.dp),
@@ -106,8 +132,8 @@ fun SearchScreen(
     TextField(
       value = query,
       onValueChange = { query = it },
-      placeholder = { Text("Digita un titolo…", color = Color.White.copy(alpha = 0.4f)) },
-      leadingIcon = { Text("🔍", modifier = Modifier.padding(start = 8.dp)) },
+      placeholder = { Text("Cerca titoli, generi o persone", color = Color.White.copy(alpha = 0.4f)) },
+      leadingIcon = { Symbol(R.drawable.ic_ms_search, tint = Color.White.copy(alpha = 0.7f), modifier = Modifier.padding(start = 8.dp)) },
       singleLine = true,
       shape = RoundedCornerShape(16.dp),
       keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -142,28 +168,29 @@ fun SearchScreen(
           },
     )
 
+    if (genreMatches.isNotEmpty()) {
+      SectionTitle("Generi", modifier = Modifier.padding(bottom = 6.dp))
+      GenreRow(genreMatches, onClick = ::openGenre, firstModifier = Modifier.focusRequester(contentFocusRequester), modifier = Modifier.padding(bottom = 12.dp))
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
       when (val s = state) {
         is SearchUiState.Idle ->
-          if (s.history.isEmpty()) {
-            EmptyState()
-          } else {
-            SearchHistoryList(
-              history = s.history,
-              onPick = ::runSearch,
-              onClear = viewModel::clearHistory,
-              firstFocusRequester = contentFocusRequester,
-            )
-          }
+          IdleContent(
+            history = s.history,
+            trending = remember { HomeSnapshot.trending },
+            genres = genres,
+            onOpen = { onNavigate(navKeyFor(it)) },
+            onPick = ::runSearch,
+            onClear = viewModel::clearHistory,
+            onGenre = ::openGenre,
+            firstModifier = firstModifier,
+          )
         is SearchUiState.Loading -> LoadingIndicator(modifier = Modifier.align(Alignment.TopStart))
-        is SearchUiState.Error -> Text(text = s.message, style = MaterialTheme.typography.bodyMedium)
+        is SearchUiState.Error -> NoResults(s.message, genres, onGenre = ::openGenre, firstModifier = firstModifier)
         is SearchUiState.Success ->
           if (s.results.isEmpty()) {
-            Text(
-              text = "Nessun risultato per \"$query\".",
-              style = MaterialTheme.typography.bodyLarge,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            NoResults("Nessun risultato per \"$query\".", genres, onGenre = ::openGenre, firstModifier = firstModifier)
           } else {
             // All results are already in memory (search() isn't paginated), so re-ordering is a
             // free client-side sort — no re-fetch, unlike Sfoglia's server-driven "Ordina".
@@ -176,6 +203,10 @@ fun SearchScreen(
                 }
               }
             Column(modifier = Modifier.fillMaxSize()) {
+              SectionTitle(
+                if (s.results.size == 1) "Film e serie TV · 1 risultato" else "Film e serie TV · ${s.results.size} risultati",
+                modifier = Modifier.padding(bottom = 8.dp),
+              )
               SearchSortRow(selected = sortMode, onSelect = { sortMode = it })
               LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = POSTER_WIDTH),
@@ -190,7 +221,7 @@ fun SearchScreen(
                   PosterCard(
                     item = item,
                     onClick = { onNavigate(navKeyFor(item)) },
-                    cardModifier = if (index == 0) Modifier.focusRequester(contentFocusRequester) else Modifier,
+                    cardModifier = if (index == 0) firstModifier else Modifier,
                   )
                 }
               }
@@ -234,46 +265,106 @@ private fun SearchSortRow(selected: SearchSort, onSelect: (SearchSort) -> Unit, 
 }
 
 @Composable
-private fun EmptyState(modifier: Modifier = Modifier) {
-  Column(modifier = modifier.padding(top = 40.dp)) {
-    Text(text = "🎬", style = MaterialTheme.typography.displaySmall)
-    Text(
-      text = "Cosa hai voglia di guardare?",
-      style = MaterialTheme.typography.titleMedium,
-      modifier = Modifier.padding(top = 12.dp),
-    )
-    Text(
-      text = "Digita un titolo qui sopra e premi invio.",
-      style = MaterialTheme.typography.bodyMedium,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      modifier = Modifier.padding(top = 4.dp),
-    )
-  }
+private fun SectionTitle(text: String, modifier: Modifier = Modifier) {
+  Text(text = text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = modifier)
 }
 
+/** Genre shortcuts as a row of buttons — D-pad friendly, one focus line. */
 @Composable
-private fun SearchHistoryList(
-  history: List<String>,
-  onPick: (String) -> Unit,
-  onClear: () -> Unit,
-  firstFocusRequester: FocusRequester,
-  modifier: Modifier = Modifier,
-) {
-  Column(modifier = modifier.fillMaxWidth()) {
-    Text(text = "Ricerche recenti", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 12.dp))
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth(0.55f)) {
-      itemsIndexed(history, key = { _, it -> it }) { index, q ->
-        Button(
-          onClick = { onPick(q) },
-          modifier = (if (index == 0) Modifier.focusRequester(firstFocusRequester) else Modifier).fillMaxWidth(),
-        ) {
-          Text("🕑   $q", modifier = Modifier.fillMaxWidth())
-        }
-      }
-      item {
-        Spacer(Modifier.height(4.dp))
-        Button(onClick = onClear) { Text("Cancella cronologia") }
+private fun GenreRow(genres: List<GenreOption>, onClick: (Int) -> Unit, modifier: Modifier = Modifier, firstModifier: Modifier = Modifier) {
+  LazyRow(
+    modifier = modifier,
+    horizontalArrangement = Arrangement.spacedBy(10.dp),
+    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+  ) {
+    itemsIndexed(genres, key = { _, g -> g.id }) { index, g ->
+      Button(onClick = { onClick(g.id) }, modifier = if (index == 0) firstModifier else Modifier) {
+        SymbolLabel(R.drawable.ic_ms_explore, g.name)
       }
     }
   }
 }
+
+/**
+ * Before anything is typed — what Netflix's own search calls a pre-query state: trending titles
+ * (from Home's already-fetched row, so no site request), recent searches, and genres to browse.
+ * [firstModifier] carries the field's DOWN target, so it goes on the first section that exists.
+ */
+@Composable
+private fun IdleContent(
+  history: List<String>,
+  trending: List<StreamItem>,
+  genres: List<GenreOption>,
+  onOpen: (StreamItem) -> Unit,
+  onPick: (String) -> Unit,
+  onClear: () -> Unit,
+  onGenre: (Int) -> Unit,
+  firstModifier: Modifier,
+) {
+  if (trending.isEmpty() && history.isEmpty() && genres.isEmpty()) {
+    Column(modifier = Modifier.padding(top = 40.dp)) {
+      Symbol(R.drawable.ic_ms_search, size = 40.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+      Text(text = "Cosa hai voglia di guardare?", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 12.dp))
+      Text(
+        text = "Digita un titolo, un genere o il nome di una persona.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 4.dp),
+      )
+    }
+    return
+  }
+  val trendingFirst = trending.isNotEmpty()
+  val historyFirst = !trendingFirst && history.isNotEmpty()
+  LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
+    if (trendingFirst) {
+      item { SectionTitle("Di tendenza") }
+      item {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(start = 8.dp, top = 8.dp, bottom = 8.dp)) {
+          itemsIndexed(trending, key = { _, it -> it.channelId + it.url }) { index, item ->
+            CoverCard(item = item, onClick = { onOpen(item) }, showLabel = true, cardModifier = if (index == 0) firstModifier else Modifier)
+          }
+        }
+      }
+    }
+    if (history.isNotEmpty()) {
+      item { SectionTitle("Ricerche recenti", modifier = Modifier.padding(top = 8.dp)) }
+      itemsIndexed(history, key = { _, it -> "h:$it" }) { index, q ->
+        Button(
+          onClick = { onPick(q) },
+          modifier = (if (historyFirst && index == 0) firstModifier else Modifier).fillMaxWidth(0.55f),
+        ) {
+          SymbolLabel(R.drawable.ic_ms_history, q)
+        }
+      }
+      item { Button(onClick = onClear) { Text("Cancella cronologia") } }
+    }
+    if (genres.isNotEmpty()) {
+      item { SectionTitle("Sfoglia per genere", modifier = Modifier.padding(top = 8.dp)) }
+      item { GenreRow(genres, onClick = onGenre, firstModifier = if (!trendingFirst && !historyFirst) firstModifier else Modifier) }
+    }
+  }
+}
+
+/** Nothing matched: say what to try, and keep the genres within D-pad reach. */
+@Composable
+private fun NoResults(message: String, genres: List<GenreOption>, onGenre: (Int) -> Unit, firstModifier: Modifier) {
+  Column {
+    Text(text = message, style = MaterialTheme.typography.bodyLarge)
+    Text(
+      text = "Prova con un altro titolo, attore, regista o genere.",
+      style = MaterialTheme.typography.bodyMedium,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.padding(top = 4.dp),
+    )
+    if (genres.isNotEmpty()) {
+      SectionTitle("Oppure sfoglia per genere", modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
+      GenreRow(genres, onClick = onGenre, firstModifier = firstModifier)
+    }
+  }
+}
+
+private val DIACRITICS = Regex("\\p{M}+")
+
+/** Accent- and case-insensitive form, so "comm" finds "Commedia" and "azione" finds "Azione". */
+private fun fold(s: String) = Normalizer.normalize(s, Normalizer.Form.NFD).replace(DIACRITICS, "").lowercase().trim()

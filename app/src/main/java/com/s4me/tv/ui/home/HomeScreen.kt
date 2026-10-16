@@ -39,9 +39,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -65,16 +65,19 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
+import com.s4me.tv.R
 import com.s4me.tv.Search
 import com.s4me.tv.Settings
 import com.s4me.tv.engine.GenreOption
-import com.s4me.tv.engine.WatchProgressStore
-import com.s4me.tv.engine.WatchlistStore
 import com.s4me.tv.engine.HomeSection
 import com.s4me.tv.engine.StreamItem
+import com.s4me.tv.engine.WatchProgressStore
+import com.s4me.tv.engine.WatchlistStore
 import com.s4me.tv.navKeyFor
 import com.s4me.tv.ui.components.BrandedLoading
 import com.s4me.tv.ui.components.CoverCard
+import com.s4me.tv.ui.components.Symbol
+import com.s4me.tv.ui.components.SymbolLabel
 import com.s4me.tv.ui.components.WatchlistToggleButton
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -150,7 +153,7 @@ fun HomeScreen(onNavigate: (NavKey) -> Unit, modifier: Modifier = Modifier, view
       is HomeUiState.Error ->
         Column(modifier = Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
           Text(text = s.message, style = MaterialTheme.typography.titleMedium)
-          Button(onClick = { viewModel.load() }, modifier = Modifier.padding(top = 16.dp)) { Text("↻  Riprova") }
+          Button(onClick = { viewModel.load() }, modifier = Modifier.padding(top = 16.dp)) { SymbolLabel(R.drawable.ic_ms_refresh, "Riprova") }
         }
       is HomeUiState.Success ->
         HomeSections(
@@ -230,9 +233,9 @@ private fun HomeHeader(
       )
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-      Button(onClick = onBrowseClick, modifier = onDownGoToContent) { Text("☰  Sfoglia") }
-      Button(onClick = onSearchClick, modifier = Modifier.focusRequester(searchFocusRequester).then(onDownGoToContent)) { Text("🔍  Cerca") }
-      Button(onClick = onSettingsClick, modifier = onDownGoToContent) { Text("⚙") }
+      Button(onClick = onBrowseClick, modifier = onDownGoToContent) { SymbolLabel(R.drawable.ic_ms_explore, "Sfoglia") }
+      Button(onClick = onSearchClick, modifier = Modifier.focusRequester(searchFocusRequester).then(onDownGoToContent)) { SymbolLabel(R.drawable.ic_ms_search, "Cerca") }
+      Button(onClick = onSettingsClick, modifier = onDownGoToContent) { Symbol(R.drawable.ic_ms_settings, contentDescription = "Impostazioni") }
     }
   }
 }
@@ -441,7 +444,7 @@ private fun HeroCarousel(
               }
             },
       ) {
-        Text("▶  Guarda")
+        SymbolLabel(R.drawable.ic_ms_play_arrow_fill, "Guarda")
       }
       WatchlistToggleButton(
         item = current,

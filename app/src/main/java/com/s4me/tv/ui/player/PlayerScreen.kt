@@ -20,21 +20,21 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import java.io.ByteArrayInputStream
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -64,8 +64,10 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.s4me.tv.R
 import com.s4me.tv.engine.AdBlock
 import com.s4me.tv.engine.ChannelRegistry
 import com.s4me.tv.engine.DESKTOP_UA
@@ -78,11 +80,13 @@ import com.s4me.tv.remote.PlaybackCommand
 import com.s4me.tv.remote.PlaybackControlBridge
 import com.s4me.tv.remote.PlaybackStatus
 import com.s4me.tv.ui.components.LoadingIndicator
+import com.s4me.tv.ui.components.Symbol
+import java.io.ByteArrayInputStream
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.Locale
 
 private const val TAG = "PlayerScreen"
 private const val SEEK_STEP_MS = 10_000L
@@ -563,7 +567,8 @@ private fun TracksMenu(exoPlayer: ExoPlayer, onClose: () -> Unit, modifier: Modi
           },
           modifier = if (index == 0) Modifier.focusRequester(firstFocusRequester) else Modifier,
         ) {
-          Text((if (group.isSelected) "✓  " else "") + trackDisplayName(group))
+          if (group.isSelected) { Symbol(R.drawable.ic_ms_check, size = ButtonDefaults.IconSize); Spacer(Modifier.width(ButtonDefaults.IconSpacing)) }
+          Text(trackDisplayName(group))
         }
       }
 
@@ -577,7 +582,8 @@ private fun TracksMenu(exoPlayer: ExoPlayer, onClose: () -> Unit, modifier: Modi
             onClose()
           }
         ) {
-          Text((if (textDisabled || textGroups.none { it.isSelected }) "✓  " else "") + "Disattivati")
+          if (textDisabled || textGroups.none { it.isSelected }) { Symbol(R.drawable.ic_ms_check, size = ButtonDefaults.IconSize); Spacer(Modifier.width(ButtonDefaults.IconSpacing)) }
+          Text("Disattivati")
         }
         textGroups.forEach { group ->
           Button(
@@ -586,7 +592,8 @@ private fun TracksMenu(exoPlayer: ExoPlayer, onClose: () -> Unit, modifier: Modi
               onClose()
             }
           ) {
-            Text((if (group.isSelected) "✓  " else "") + trackDisplayName(group))
+            if (group.isSelected) { Symbol(R.drawable.ic_ms_check, size = ButtonDefaults.IconSize); Spacer(Modifier.width(ButtonDefaults.IconSpacing)) }
+            Text(trackDisplayName(group))
           }
         }
       }
@@ -895,14 +902,30 @@ private fun PlayerInfoOverlay(item: StreamItem, positionMs: Long?, durationMs: L
   }
 }
 
+/** The callers set `feedback` to a small token string; this draws the matching Material Symbol
+ *  (play/pause/±10 s/seek) and falls back to the text itself for anything else, so no caller changed
+ *  when the emoji-like glyphs were replaced by icons. */
 @Composable
 private fun PlaybackFeedback(text: String, modifier: Modifier = Modifier) {
-  Text(
-    text = text,
-    style = MaterialTheme.typography.headlineSmall,
-    color = Color.White,
+  val icon =
+    when (text) {
+      "▶" -> R.drawable.ic_ms_play_arrow_fill
+      "⏸" -> R.drawable.ic_ms_pause_fill
+      "⏪ 10s" -> R.drawable.ic_ms_replay_10
+      "⏩ 10s" -> R.drawable.ic_ms_forward_10
+      "↔" -> R.drawable.ic_ms_swap_horiz
+      else -> null
+    }
+  Box(
+    contentAlignment = Alignment.Center,
     modifier = modifier.background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(12.dp)).padding(horizontal = 24.dp, vertical = 12.dp),
-  )
+  ) {
+    if (icon != null) {
+      Symbol(icon, size = 44.dp, tint = Color.White)
+    } else {
+      Text(text = text, style = MaterialTheme.typography.headlineSmall, color = Color.White)
+    }
+  }
 }
 
 private fun formatTime(ms: Long): String {

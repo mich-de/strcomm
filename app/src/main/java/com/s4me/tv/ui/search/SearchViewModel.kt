@@ -4,8 +4,10 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.s4me.tv.engine.ChannelRegistry
+import com.s4me.tv.engine.GenreOption
 import com.s4me.tv.engine.ItemKind
 import com.s4me.tv.engine.SearchHistoryStore
+import com.s4me.tv.engine.SiteTraffic
 import com.s4me.tv.engine.StreamItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -15,6 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed interface SearchUiState {
   data class Idle(val history: List<String> = emptyList()) : SearchUiState
@@ -30,6 +33,19 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
   private val historyStore = SearchHistoryStore(application)
   private val _uiState = MutableStateFlow<SearchUiState>(SearchUiState.Idle(historyStore.load()))
   val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+
+  /** The catalogue's genres: the "Sfoglia per genere" row before typing, and what a typed fragment
+   *  ("comm") is matched against. Cached by the channel once Home has loaded; otherwise one request,
+   *  taken in the background lane like every other fill-in fetch. */
+  private val _genres = MutableStateFlow<List<GenreOption>>(emptyList())
+  val genres: StateFlow<List<GenreOption>> = _genres.asStateFlow()
+
+  init {
+    viewModelScope.launch(Dispatchers.IO) {
+      val channel = ChannelRegistry.all.firstOrNull() ?: return@launch
+      _genres.value = withContext(SiteTraffic.Background) { runCatching { channel.genres() }.getOrDefault(emptyList()) }
+    }
+  }
 
   fun search(query: String, verifyPerson: Boolean = false) {
     if (query.isBlank()) {

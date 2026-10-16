@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.itemsIndexed as itemsIndexedList
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,11 +44,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavKey
 import androidx.tv.material3.Button
 import androidx.tv.material3.ClickableSurfaceDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import com.s4me.tv.R
 import com.s4me.tv.Search
 import com.s4me.tv.engine.CountryOption
 import com.s4me.tv.engine.GenreOption
@@ -55,13 +56,14 @@ import com.s4me.tv.engine.ItemKind
 import com.s4me.tv.engine.StreamItem
 import com.s4me.tv.navKeyFor
 import com.s4me.tv.ui.components.EpisodeCard
-import com.s4me.tv.ui.components.WatchlistToggleButton
 import com.s4me.tv.ui.components.LoadingIndicator
 import com.s4me.tv.ui.components.NameChipsRow
 import com.s4me.tv.ui.components.POSTER_WIDTH
 import com.s4me.tv.ui.components.PosterCard
-import kotlinx.coroutines.delay
+import com.s4me.tv.ui.components.Symbol
+import com.s4me.tv.ui.components.WatchlistToggleButton
 import java.util.Calendar
+import kotlinx.coroutines.delay
 
 @Composable
 fun BrowseScreen(root: StreamItem, onNavigate: (NavKey) -> Unit, modifier: Modifier = Modifier) {
@@ -135,7 +137,7 @@ fun BrowseScreen(root: StreamItem, onNavigate: (NavKey) -> Unit, modifier: Modif
               // Announced season with no episodes yet ("The Gentlemen Stagione 2 non si apre"):
               // an explicit message instead of a silently blank page.
               Column(modifier = Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(text = "🎬", style = MaterialTheme.typography.headlineMedium)
+                Symbol(R.drawable.ic_ms_movie, size = 40.dp, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                   text = "Nessun episodio ancora disponibile",
                   style = MaterialTheme.typography.titleMedium,
@@ -271,7 +273,7 @@ private fun pickerSpecFor(
     PickerKind.AWARD ->
       PickerSpec(
         title = "Premi",
-        options = listOf(null to "Tutti", "oscar" to "🏆 Oscar · Miglior film", "oscar-nominees" to "🎬 Oscar · Candidati"),
+        options = listOf(null to "Tutti", "oscar" to "Oscar · Miglior film", "oscar-nominees" to "Oscar · Candidati"),
         selected = filter.award,
         apply = { f, v -> f.copy(award = v as String?) },
       )
@@ -334,7 +336,7 @@ private fun CompactFilterHeader(
       )
       FilterPill(
         label = "Premi",
-        value = when (filter.award) { null -> "Tutti"; "oscar" -> "🏆 Vincitori"; else -> "🎬 Candidati" },
+        value = when (filter.award) { null -> "Tutti"; "oscar" -> "Vincitori"; else -> "Candidati" },
         active = filter.award != null,
         onClick = { onOpenPicker(PickerKind.AWARD) },
       )
@@ -376,11 +378,7 @@ private fun FilterPill(label: String, value: String, active: Boolean, onClick: (
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.widthIn(max = 130.dp),
       )
-      Text(
-        text = "▾",
-        style = MaterialTheme.typography.labelSmall,
-        color = LocalContentColor.current.copy(alpha = 0.65f),
-      )
+      Symbol(R.drawable.ic_ms_expand_more, size = 18.dp, tint = LocalContentColor.current.copy(alpha = 0.65f))
     }
   }
 }
@@ -443,7 +441,7 @@ private fun FilterPickerDialog(spec: PickerSpec, onSelect: (Any?) -> Unit, onDis
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
               )
-              if (isSelected) Text(text = "✓", style = MaterialTheme.typography.labelLarge)
+              if (isSelected) Symbol(R.drawable.ic_ms_check, size = 20.dp)
             }
           }
         }

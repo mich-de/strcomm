@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import java.util.Locale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,10 +27,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -43,6 +42,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.s4me.tv.Player
+import com.s4me.tv.R
 import com.s4me.tv.Search
 import com.s4me.tv.engine.ItemKind
 import com.s4me.tv.engine.StreamItem
@@ -52,7 +52,9 @@ import com.s4me.tv.navKeyFor
 import com.s4me.tv.ui.components.LoadingIndicator
 import com.s4me.tv.ui.components.NameChipsRow
 import com.s4me.tv.ui.components.PosterCard
+import com.s4me.tv.ui.components.SymbolLabel
 import com.s4me.tv.ui.components.WatchlistToggleButton
+import java.util.Locale
 
 @Composable
 fun DetailScreen(item: StreamItem, onNavigate: (NavKey) -> Unit, modifier: Modifier = Modifier) {
@@ -145,7 +147,7 @@ private fun DetailContent(
         // TMDB's official trailer when a key is set, else the source site's own trailer list —
         // opens in the YouTube app, browser fallback. Only shown once detail() resolves an id.
         displayItem.trailerYoutubeId?.let { videoId ->
-          Button(onClick = { openYouTubeTrailer(context, videoId) }, modifier = Modifier.padding(top = 12.dp)) { Text("▶  Trailer") }
+          Button(onClick = { openYouTubeTrailer(context, videoId) }, modifier = Modifier.padding(top = 12.dp)) { SymbolLabel(R.drawable.ic_ms_movie, "Trailer") }
         }
       }
     }
@@ -261,7 +263,7 @@ private fun PlayActions(item: StreamItem, sources: List<StreamItem>, onPlay: (St
           // The player auto-resumes from the stored position, so "Riprendi" just plays; "Ricomincia"
           // clears the stored position first so playback starts from zero.
           Button(onClick = { onPlay(source) }, modifier = Modifier.focusRequester(firstFocusRequester)) {
-            Text("▶  Riprendi · ${formatResumeTime(resumeMs)}")
+            SymbolLabel(R.drawable.ic_ms_play_arrow_fill, "Riprendi · ${formatResumeTime(resumeMs)}")
           }
           Button(
             onClick = {
@@ -269,14 +271,14 @@ private fun PlayActions(item: StreamItem, sources: List<StreamItem>, onPlay: (St
               onPlay(source)
             }
           ) {
-            Text("↻  Ricomincia")
+            SymbolLabel(R.drawable.ic_ms_restart_alt, "Ricomincia")
           }
         } else {
           Button(
             onClick = { onPlay(source) },
             modifier = if (index == 0) Modifier.focusRequester(firstFocusRequester) else Modifier,
           ) {
-            Text("▶  Guarda · ${source.title}")
+            SymbolLabel(R.drawable.ic_ms_play_arrow_fill, "Guarda · ${source.title}")
           }
         }
         if (index == 0 && item.kind == ItemKind.MOVIE) {

@@ -321,6 +321,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         return@launch
       }
 
+      // Search's pre-query row reads this instead of asking the site again.
+      HomeSnapshot.trending =
+        channelSections.firstOrNull()?.items.orEmpty().filter { it.kind == ItemKind.MOVIE || it.kind == ItemKind.SERIES }.take(10)
+
       // Personal rows lead: "Continua a guardare" (last 10, with resume bars) then "La mia lista",
       // then the external-chart highlight rows (when they resolved), then the site's own rows.
       val personal = personalSections()
