@@ -3,6 +3,8 @@ package com.s4me.tv.client.ui.detail
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -19,21 +21,26 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -54,13 +62,16 @@ import com.s4me.tv.client.R
 import com.s4me.tv.client.ui.components.ErrorScreen
 import com.s4me.tv.client.ui.components.PosterCard
 import com.s4me.tv.client.ui.components.SymbolLabel
+import com.s4me.tv.client.ui.components.TrailerView
 import com.s4me.tv.client.ui.downloads.DownloadButton
 import com.s4me.tv.client.ui.lists.AddToListSheet
+import com.s4me.tv.engine.RatingStore
 import com.s4me.tv.engine.StreamItem
 import com.s4me.tv.engine.WatchProgressStore
 import com.s4me.tv.engine.WatchlistStore
 import com.s4me.tv.engine.youtubeVideoId
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 @Composable
 fun DetailScreen(
@@ -75,12 +86,32 @@ fun DetailScreen(
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   val display by viewModel.preview.collectAsStateWithLifecycle()
   val related by viewModel.related.collectAsStateWithLifecycle()
+  val similar by viewModel.similar.collectAsStateWithLifecycle()
   val context = LocalContext.current
   val scroll = rememberScrollState()
+
+  // The header plays the trailer in place, muted, once the page has settled — the title page's
+  // billboard. The still stays on top until YouTube itself reports playing, so a trailer that can't
+  // be embedded (disabled, age-restricted) leaves the picture instead of a black box.
+  val trailerId = display.trailerYoutubeId
+  var showTrailer by remember(trailerId) { mutableStateOf(false) }
+  var trailerPlaying by remember(trailerId) { mutableStateOf(false) }
+  var muted by remember { mutableStateOf(true) }
+  LaunchedEffect(trailerId) {
+    if (trailerId != null) {
+      delay(1200)
+      showTrailer = true
+    }
+  }
+  val backdropAlpha by animateFloatAsState(if (trailerPlaying) 0f else 1f, animationSpec = tween(700), label = "detailBackdrop")
+  var tab by remember { mutableIntStateOf(0) }
 
   Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scroll)) {
       Box(modifier = Modifier.fillMaxWidth().height(300.dp)) {
+        if (showTrailer && trailerId != null) {
+          TrailerView(youtubeId = trailerId, muted = muted, onPlaying = { trailerPlaying = true }, modifier = Modifier.fillMaxSize())
+        }
         AsyncImage(
           model = display.backdrop ?: display.thumbnail,
           contentDescription = display.title,
@@ -88,13 +119,26 @@ fun DetailScreen(
           // Crop from the top, not the centre — a centred crop of a taller-than-frame still lops
           // the top off ("se ci sono persone... vengono tagliate le teste").
           alignment = Alignment.TopCenter,
-          modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
+          modifier = Modifier.fillMaxSize().graphicsLayer { alpha = backdropAlpha }.background(MaterialTheme.colorScheme.surfaceVariant),
         )
         Box(
           Modifier.fillMaxSize().background(
             Brush.verticalGradient(0.4f to Color.Transparent, 1f to MaterialTheme.colorScheme.background)
           )
         )
+        if (trailerPlaying) {
+          IconButton(
+            onClick = { muted = !muted },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp).size(40.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape),
+          ) {
+            Icon(
+              ImageVector.vectorResource(if (muted) R.drawable.ic_ms_volume_off else R.drawable.ic_ms_volume_up),
+              contentDescription = if (muted) "Attiva l'audio" else "Disattiva l'audio",
+              tint = Color.White,
+              modifier = Modifier.size(22.dp),
+            )
+          }
+        }
       }
 
       Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 4.dp, bottom = 32.dp)) {
@@ -124,15 +168,26 @@ fun DetailScreen(
           modifier = Modifier.padding(top = 16.dp),
         )
 
-        display.plot?.let {
-          Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 18.dp))
+        if (similar.isNotEmpty()) {
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 18.dp)) {
+            FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("Panoramica") })
+            FilterChip(selected = tab == 1, onClick = { tab = 1 }, label = { Text("Simili") })
+          }
         }
 
-        NameRow("Cast", display.cast, onPersonSearch, Modifier.padding(top = 16.dp))
-        NameRow("Regia", display.director, onPersonSearch, Modifier.padding(top = 8.dp))
+        if (tab == 1 && similar.isNotEmpty()) {
+          SimilarGrid(items = similar, onOpen = onOpen, modifier = Modifier.padding(top = 16.dp))
+        } else {
+          display.plot?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 18.dp))
+          }
 
-        if (related.isNotEmpty()) {
-          SagaRow(items = related, onOpen = onOpen, modifier = Modifier.padding(top = 24.dp))
+          NameRow("Cast", display.cast, onPersonSearch, Modifier.padding(top = 16.dp))
+          NameRow("Regia", display.director, onPersonSearch, Modifier.padding(top = 8.dp))
+
+          if (related.isNotEmpty()) {
+            SagaRow(items = related, onOpen = onOpen, modifier = Modifier.padding(top = 24.dp))
+          }
         }
 
         if (state is DetailUiState.Error) {
@@ -170,6 +225,8 @@ private fun PlayActions(
   val resumeMs = remember(item.url) { progressStore.positionFor(item.url) }
   var inList by remember(item.url) { mutableStateOf(watchlistStore.contains(item.url)) }
   var showListsSheet by remember { mutableStateOf(false) }
+  val ratingStore = remember { RatingStore(context) }
+  var rating by remember(item.url) { mutableIntStateOf(ratingStore.get(item.url)) }
 
   val sources = (state as? DetailUiState.Success)?.sources.orEmpty()
   val ready = sources.firstOrNull()
@@ -197,11 +254,33 @@ private fun PlayActions(
     IconButton(onClick = { showListsSheet = true }) {
       Icon(ImageVector.vectorResource(R.drawable.ic_ms_playlist_add), contentDescription = "Aggiungi a una lista personalizzata")
     }
+    // A personal marker (kept on the device, per profile) — no recommender behind it.
+    IconButton(onClick = { rating = ratingStore.toggle(item.url, 1) }) {
+      Icon(
+        ImageVector.vectorResource(if (rating == 1) R.drawable.ic_ms_thumb_up_fill else R.drawable.ic_ms_thumb_up),
+        contentDescription = "Mi piace",
+      )
+    }
+    IconButton(onClick = { rating = ratingStore.toggle(item.url, -1) }) {
+      Icon(
+        ImageVector.vectorResource(if (rating == -1) R.drawable.ic_ms_thumb_down_fill else R.drawable.ic_ms_thumb_down),
+        contentDescription = "Non mi piace",
+      )
+    }
     DownloadButton(item = item, onPlayOffline = onPlay)
   }
 
   if (showListsSheet) {
     AddToListSheet(item = item, onDismiss = { showListsSheet = false })
+  }
+}
+
+/** "Simili": titles of the same genre as a wrapping grid of posters (see [DetailViewModel.similar]). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SimilarGrid(items: List<StreamItem>, onOpen: (StreamItem) -> Unit, modifier: Modifier = Modifier) {
+  FlowRow(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    items.forEach { m -> PosterCard(item = m, onClick = { onOpen(m) }, width = 104.dp, showLabel = true) }
   }
 }
 

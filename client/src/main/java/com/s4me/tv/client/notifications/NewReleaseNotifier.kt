@@ -26,6 +26,24 @@ object NewReleaseNotifier {
     manager.createNotificationChannel(channel)
   }
 
+  /** "Disponibile ora": something a person searched for and didn't find has appeared in the catalogue. */
+  fun notifyAvailable(context: Context, item: StreamItem, searchedFor: String, notificationId: Int) {
+    ensureChannel(context)
+    val hasPermission =
+      Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    if (!hasPermission || !NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+    val notification =
+      NotificationCompat.Builder(context, CHANNEL_ID)
+        .setSmallIcon(R.mipmap.ic_launcher)
+        .setContentTitle("Disponibile ora")
+        .setContentText("${item.title} — cercavi «$searchedFor»")
+        .setAutoCancel(true)
+        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .build()
+    NotificationManagerCompat.from(context).notify(notificationId, notification)
+  }
+
   fun notifyNewSeason(context: Context, item: StreamItem, notificationId: Int) {
     ensureChannel(context)
     // areNotificationsEnabled() alone covers every case that matters at runtime (denied

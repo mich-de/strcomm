@@ -10,7 +10,7 @@ private const val MAX_HISTORY = 15
 /** Most-recent-first list of past search terms, deduplicated case-insensitively and capped at
  *  [MAX_HISTORY]. SharedPreferences is plenty for a flat string list — no need to pull in a DB. */
 class SearchHistoryStore(app: Application) {
-  private val prefs = app.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+  private val prefs = app.getSharedPreferences(ProfileScope.prefsName(app, PREFS_NAME), Context.MODE_PRIVATE)
 
   fun load(): List<String> = prefs.getString(KEY_QUERIES, null)?.split("\n")?.filter { it.isNotBlank() } ?: emptyList()
 

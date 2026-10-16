@@ -23,6 +23,10 @@ import kotlinx.serialization.Serializable
 
 @Serializable data object MyDownloads : NavKey
 
+@Serializable data object MyList : NavKey
+
+@Serializable data object Profiles : NavKey
+
 /** Grid of a CATEGORY/LIST/SERIES/SEASON item's children (also the "detail" screen for a series). */
 @Serializable data class Browse(val item: StreamItem) : NavKey
 

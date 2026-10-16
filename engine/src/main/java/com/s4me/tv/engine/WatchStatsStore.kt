@@ -30,7 +30,7 @@ data class WatchStatsSummary(val titlesCompleted: Int, val moviesCompleted: Int,
  * seeking) — an honest, simple number: "content you've finished adds up to about X hours".
  */
 class WatchStatsStore(context: Context) {
-  private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+  private val prefs = context.applicationContext.getSharedPreferences(ProfileScope.prefsName(context, PREFS_NAME), Context.MODE_PRIVATE)
   private val json = Json { ignoreUnknownKeys = true }
 
   private fun load(): MutableMap<String, CompletedEntry> {

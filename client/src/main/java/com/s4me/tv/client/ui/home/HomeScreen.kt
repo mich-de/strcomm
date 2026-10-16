@@ -1,9 +1,5 @@
 package com.s4me.tv.client.ui.home
 
-import android.content.Context
-import android.view.ViewGroup
-import android.webkit.WebChromeClient
-import android.webkit.WebView
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -33,12 +29,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,29 +45,31 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.s4me.tv.client.R
 import com.s4me.tv.client.nav.isWideScreen
 import com.s4me.tv.client.ui.components.ErrorScreen
+import com.s4me.tv.client.ui.components.ItemActionsSheet
 import com.s4me.tv.client.ui.components.LoadingScreen
 import com.s4me.tv.client.ui.components.PosterCard
 import com.s4me.tv.client.ui.components.RankedPosterCard
+import com.s4me.tv.client.ui.components.SheetAction
 import com.s4me.tv.client.ui.components.Symbol
 import com.s4me.tv.client.ui.components.SymbolLabel
+import com.s4me.tv.client.ui.components.TrailerView
 import com.s4me.tv.engine.GenreOption
 import com.s4me.tv.engine.HomeSection
 import com.s4me.tv.engine.StreamItem
+import com.s4me.tv.engine.WatchProgressStore
 import com.s4me.tv.engine.WatchlistStore
-import kotlin.coroutines.resume
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.suspendCancellableCoroutine
 
 @Composable
 fun HomeScreen(
   onOpen: (StreamItem) -> Unit,
+  onOpenMyList: () -> Unit,
   onOpenBrowse: (String) -> Unit,
   modifier: Modifier = Modifier,
   viewModel: HomeViewModel = viewModel(),
@@ -81,6 +77,9 @@ fun HomeScreen(
   val state by viewModel.uiState.collectAsStateWithLifecycle()
   val genres by viewModel.genres.collectAsStateWithLifecycle()
   val docGenreId = remember(genres) { genres.firstOrNull { it.name.contains("document", ignoreCase = true) }?.id }
+  val context = LocalContext.current
+  // The long-press menu of the personal rows: the section it came from decides what it can remove.
+  var menu by remember { mutableStateOf<Pair<HomeSection, StreamItem>?>(null) }
 
   when (val s = state) {
     is HomeUiState.Loading -> LoadingScreen(modifier)
@@ -99,13 +98,35 @@ fun HomeScreen(
           item { GenreChips(genres = genres, onOpenGenre = { id -> onOpenBrowse("genre=$id") }) }
         }
         items(s.sections, key = { it.channelId }) { section ->
+          val personal = section.channelId == CONTINUE_WATCHING_ID || section.channelId == WATCHLIST_ID
           SectionRow(
             section = section,
             ranked = section.channelId == TRENDING_ID || section.channelId == JUSTWATCH_ID,
             onOpen = onOpen,
+            onLongPress = if (personal) { item -> menu = section to item } else null,
+            onTitleClick = if (section.channelId == WATCHLIST_ID) onOpenMyList else null,
           )
         }
       }
+  }
+
+  menu?.let { (section, item) ->
+    val actions =
+      buildList {
+        add(SheetAction(R.drawable.ic_ms_info, "Dettagli") { onOpen(item) })
+        if (section.channelId == CONTINUE_WATCHING_ID) {
+          add(SheetAction(R.drawable.ic_ms_close, "Rimuovi da «Continua a guardare»") {
+            WatchProgressStore(context).remove(item.url)
+            viewModel.refreshPersonalRows()
+          })
+        } else {
+          add(SheetAction(R.drawable.ic_ms_close, "Rimuovi da «La mia lista»") {
+            WatchlistStore(context).let { if (it.contains(item.url)) it.toggle(item) }
+            viewModel.refreshPersonalRows()
+          })
+        }
+      }
+    ItemActionsSheet(title = item.seriesTitle ?: item.contentTitle ?: item.title, actions = actions, onDismiss = { menu = null })
   }
 }
 
@@ -136,7 +157,7 @@ private fun HeroPager(heroes: List<StreamItem>, onOpen: (StreamItem) -> Unit) {
     Box(modifier = Modifier.fillMaxWidth().height(heroHeight).clickable { onOpen(hero) }) {
       val trailerId = hero.trailerYoutubeId
       if (showTrailer && trailerId != null) {
-        TrailerPreview(youtubeId = trailerId, onPlaying = { trailerPlaying = true }, modifier = Modifier.fillMaxWidth().height(heroHeight))
+        TrailerView(youtubeId = trailerId, muted = true, onPlaying = { trailerPlaying = true }, modifier = Modifier.fillMaxWidth().height(heroHeight))
       }
       // The backdrop sits OVER the trailer and fades out only once YouTube says it is playing. Not
       // every trailer can play inside an app — embedding turned off by its owner, age-restricted,
@@ -199,70 +220,6 @@ private fun HeroPager(heroes: List<StreamItem>, onOpen: (StreamItem) -> Unit) {
   }
 }
 
-/** Muted, looping, chromeless YouTube embed — the same trick every "hover to preview" streaming
- *  UI uses since there's no first-party player for arbitrary YouTube ids. mute=1 is what lets
- *  autoplay work at all (mediaPlaybackRequiresUserGesture = false alone isn't enough on its own
- *  once a WebView actually has audio to play — browsers block that combination outright).
- *
- *  YouTube only plays embeds that say who is embedding them, through the HTTP Referer: without one
- *  the player shows "Errore 153 · errore di configurazione del video player" ("ho un errore su s24
- *  errore configurazione video player youtube"). A URL loaded straight into a WebView sends none, so
- *  it carries the app's identity in the form YouTube documents for native apps: https://<app id>.
- *
- *  MATCH_PARENT layout params are not optional: AndroidView attaches its view WRAP_CONTENT, and a
- *  WRAP_CONTENT-tall WebView switches to sizing itself to its content — it gives the page a
- *  zero-height layout viewport, so everything 100% tall collapses. Checked over DevTools on the
- *  tablet ("YouTube non parte"): innerHeight 420, yet html, body, player and video all 800×0 — the
- *  trailer was playing, in a 0 px box, painted black. */
-@Composable
-private fun TrailerPreview(youtubeId: String, onPlaying: () -> Unit, modifier: Modifier = Modifier) {
-  val context = LocalContext.current
-  val reportPlaying by rememberUpdatedState(onPlaying)
-  val webView = remember(youtubeId) { trailerWebView(context, youtubeId) }
-  DisposableEffect(webView) { onDispose { webView.destroy() } }
-  AndroidView(factory = { webView }, modifier = modifier)
-  // Asks the embedded player every half second whether it is actually playing (state 1); the hero
-  // uncovers the video only then. YouTube's error card, or no playback within ~20 s, leaves the
-  // backdrop up for good.
-  LaunchedEffect(webView) {
-    repeat(40) {
-      delay(500)
-      when (webView.evaluate(PLAYER_STATE_JS)) {
-        "1" -> {
-          reportPlaying()
-          return@LaunchedEffect
-        }
-        "\"error\"" -> return@LaunchedEffect
-      }
-    }
-  }
-}
-
-private fun trailerWebView(context: Context, youtubeId: String): WebView =
-  WebView(context).apply {
-    layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-    setBackgroundColor(android.graphics.Color.BLACK)
-    settings.javaScriptEnabled = true
-    settings.domStorageEnabled = true
-    settings.mediaPlaybackRequiresUserGesture = false
-    webChromeClient = WebChromeClient()
-    loadUrl(
-      "https://www.youtube.com/embed/$youtubeId" +
-        "?autoplay=1&mute=1&controls=0&playsinline=1&loop=1&playlist=$youtubeId&rel=0&iv_load_policy=3",
-      mapOf("Referer" to "https://${context.packageName}"),
-    )
-  }
-
-private suspend fun WebView.evaluate(script: String): String? = suspendCancellableCoroutine { cont ->
-  evaluateJavascript(script) { cont.resume(it) }
-}
-
-/** Runs in the embed page itself: `movie_player.getPlayerState()` is 1 while playing, and `.ytp-error`
- *  is the card YouTube shows when a video can't be played here. */
-private const val PLAYER_STATE_JS =
-  "(function(){if(document.querySelector('.ytp-error'))return 'error';" +
-    "var p=document.getElementById('movie_player');return p&&p.getPlayerState?p.getPlayerState():-2;})()"
-
 @Composable
 private fun TypeFilterRow(docGenreId: Int?, onOpenBrowse: (String) -> Unit) {
   LazyRow(
@@ -289,12 +246,19 @@ private fun GenreChips(genres: List<GenreOption>, onOpenGenre: (Int) -> Unit) {
 }
 
 @Composable
-private fun SectionRow(section: HomeSection, ranked: Boolean, onOpen: (StreamItem) -> Unit) {
+private fun SectionRow(
+  section: HomeSection,
+  ranked: Boolean,
+  onOpen: (StreamItem) -> Unit,
+  onLongPress: ((StreamItem) -> Unit)? = null,
+  onTitleClick: (() -> Unit)? = null,
+) {
   Column {
     Text(
-      text = section.title,
+      // A row whose title opens its full screen says so with a chevron.
+      text = if (onTitleClick != null) "${section.title}  ›" else section.title,
       style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-      modifier = Modifier.padding(start = 16.dp, bottom = 10.dp),
+      modifier = (if (onTitleClick != null) Modifier.clickable(onClick = onTitleClick) else Modifier).padding(start = 16.dp, bottom = 10.dp),
     )
     LazyRow(
       contentPadding = PaddingValues(horizontal = 16.dp),
@@ -304,7 +268,12 @@ private fun SectionRow(section: HomeSection, ranked: Boolean, onOpen: (StreamIte
         if (ranked) {
           RankedPosterCard(item = item, rank = item.rank ?: (index + 1), onClick = { onOpen(item) })
         } else {
-          PosterCard(item = item, onClick = { onOpen(item) }, showLabel = section.channelId == CONTINUE_WATCHING_ID)
+          PosterCard(
+            item = item,
+            onClick = { onOpen(item) },
+            showLabel = section.channelId == CONTINUE_WATCHING_ID,
+            onLongClick = onLongPress?.let { cb -> { cb(item) } },
+          )
         }
       }
     }

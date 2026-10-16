@@ -40,6 +40,7 @@ import com.s4me.tv.client.R
 import com.s4me.tv.client.ui.components.ErrorScreen
 import com.s4me.tv.client.ui.components.PosterCard
 import com.s4me.tv.engine.CustomListsStore
+import com.s4me.tv.engine.RatingStore
 import com.s4me.tv.engine.StreamItem
 
 /** Index of every custom list — see [CustomListsStore]. Lists are normally created inline from
@@ -121,6 +122,9 @@ fun CustomListDetailScreen(listId: String, onOpen: (StreamItem) -> Unit, onBack:
   val def = remember { store.lists().firstOrNull { it.id == listId } }
   var items by remember { mutableStateOf(store.itemsIn(listId)) }
   var showDeleteDialog by remember { mutableStateOf(false) }
+  val ratings = remember { RatingStore(context) }
+  var sort by remember { mutableStateOf(ListSort.RECENT) }
+  val shown = remember(items, sort) { sortItems(items, sort, ratings) }
 
   Column(modifier = modifier.fillMaxSize()) {
     Row(
@@ -135,8 +139,9 @@ fun CustomListDetailScreen(listId: String, onOpen: (StreamItem) -> Unit, onBack:
     if (items.isEmpty()) {
       ErrorScreen("Questa lista è vuota.\nAggiungi un titolo da “Aggiungi a una lista” sulla sua pagina.", modifier = Modifier.fillMaxSize())
     } else {
+      SortChips(selected = sort, onSelect = { sort = it }, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
       LazyVerticalGrid(columns = GridCells.Adaptive(minSize = 120.dp), contentPadding = PaddingValues(16.dp), modifier = Modifier.fillMaxSize()) {
-        items(items, key = { it.url }) { item ->
+        items(shown, key = { it.url }) { item ->
           Box {
             PosterCard(item = item, onClick = { onOpen(item) }, width = 120.dp)
             IconButton(

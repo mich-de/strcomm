@@ -15,7 +15,7 @@ private const val KEY_ENABLED = "enabled"
  * series already has.
  */
 class NewReleaseStore(context: Context) {
-  private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+  private val prefs = context.applicationContext.getSharedPreferences(ProfileScope.prefsName(context, PREFS_NAME), Context.MODE_PRIVATE)
 
   var enabled: Boolean
     get() = prefs.getBoolean(KEY_ENABLED, false)

@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,16 +34,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.s4me.tv.client.R
+import com.s4me.tv.client.notifications.AvailabilityWorker
 import com.s4me.tv.client.notifications.NewReleaseWorker
 import com.s4me.tv.client.sync.ProgressSyncPreference
 import com.s4me.tv.client.sync.ProgressSyncWorker
 import com.s4me.tv.client.theme.ThemeMode
 import com.s4me.tv.client.theme.ThemePreference
 import com.s4me.tv.client.ui.components.SymbolLabel
+import com.s4me.tv.engine.AvailabilityReminderStore
 import com.s4me.tv.engine.BackupManager
 import com.s4me.tv.engine.CacheUtil
 import com.s4me.tv.engine.NewReleaseStore
 import com.s4me.tv.engine.PERSONAL_USE_NOTICE
+import com.s4me.tv.engine.ProfileScope
 import com.s4me.tv.engine.SearchHistoryStore
 import com.s4me.tv.engine.Tmdb
 import com.s4me.tv.engine.TmdbApiKeyStore
@@ -59,6 +63,7 @@ fun SettingsScreen(
   onOpenTvGuide: () -> Unit = {},
   onOpenCustomLists: () -> Unit = {},
   onOpenDownloads: () -> Unit = {},
+  onOpenProfiles: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current
@@ -115,6 +120,9 @@ fun SettingsScreen(
     Text("Impostazioni", style = MaterialTheme.typography.headlineSmall)
     val version = remember { appVersionName(context) }
     Text("StrComm $version · $PERSONAL_USE_NOTICE", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    FilledTonalButton(onClick = onOpenProfiles) {
+      SymbolLabel(R.drawable.ic_ms_account_circle, "Profilo: ${remember { ProfileScope.current(context).name }} · Cambia")
+    }
     FilledTonalButton(onClick = onOpenTvGuide) { SymbolLabel(R.drawable.ic_ms_live_tv, "Guida TV completa") }
     FilledTonalButton(onClick = onOpenCustomLists) { SymbolLabel(R.drawable.ic_ms_list_alt, "Le mie liste personalizzate") }
     FilledTonalButton(onClick = onOpenDownloads) { SymbolLabel(R.drawable.ic_ms_download, "I miei download") }
@@ -221,6 +229,26 @@ fun SettingsScreen(
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
+    }
+
+    val reminders = remember { AvailabilityReminderStore(context) }
+    var reminderCount by remember { mutableIntStateOf(reminders.all().size) }
+    if (reminderCount > 0) {
+      Text("Promemoria di disponibilità", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+      Text(
+        "$reminderCount ${if (reminderCount == 1) "ricerca senza risultati" else "ricerche senza risultati"}: ti avviso quando compaiono nel catalogo (controllo ogni 12 ore circa).",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      FilledTonalButton(
+        onClick = {
+          reminders.clear()
+          reminderCount = 0
+          AvailabilityWorker.cancel(context)
+        }
+      ) {
+        SymbolLabel(R.drawable.ic_ms_delete, "Annulla i promemoria")
+      }
     }
 
     Text("Sincronizza con la TV", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))

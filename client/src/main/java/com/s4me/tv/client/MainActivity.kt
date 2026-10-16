@@ -9,10 +9,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.request.crossfade
+import com.s4me.tv.client.notifications.AvailabilityWorker
 import com.s4me.tv.client.notifications.NewReleaseWorker
 import com.s4me.tv.client.player.PipController
 import com.s4me.tv.client.sync.ProgressSyncPreference
@@ -20,7 +24,10 @@ import com.s4me.tv.client.sync.ProgressSyncWorker
 import com.s4me.tv.client.theme.StrCommClientTheme
 import com.s4me.tv.client.theme.ThemeMode
 import com.s4me.tv.client.theme.ThemePreference
+import com.s4me.tv.client.ui.profiles.ProfilesScreen
+import com.s4me.tv.engine.AvailabilityReminderStore
 import com.s4me.tv.engine.NewReleaseStore
+import com.s4me.tv.engine.ProfileScope
 import com.s4me.tv.engine.Tmdb
 import com.s4me.tv.engine.TmdbApiKeyStore
 
@@ -34,6 +41,7 @@ class MainActivity : ComponentActivity() {
     // turns them on — cheap (WorkManager no-ops an already-current periodic schedule) and makes
     // sure a previously enabled feature keeps running even if its WorkManager entry was ever lost.
     if (NewReleaseStore(this).enabled) NewReleaseWorker.schedule(this)
+    if (AvailabilityReminderStore(this).all().isNotEmpty()) AvailabilityWorker.schedule(this)
     if (ProgressSyncPreference.isEnabled(this)) {
       ProgressSyncWorker.schedule(this)
       // Plus one immediate run — opening the app on a different device than where you last
@@ -51,7 +59,12 @@ class MainActivity : ComponentActivity() {
           ThemeMode.LIGHT -> false
           ThemeMode.DARK -> true
         }
-      StrCommClientTheme(dark = dark) { ClientApp() }
+      StrCommClientTheme(dark = dark) {
+        // With more than one profile, every launch starts by asking who is watching (stays answered
+        // across rotation). A single profile goes straight in.
+        var chosen by rememberSaveable { mutableStateOf(ProfileScope.all(this@MainActivity).size <= 1) }
+        if (chosen) ClientApp() else ProfilesScreen(onPicked = { chosen = true })
+      }
     }
   }
 

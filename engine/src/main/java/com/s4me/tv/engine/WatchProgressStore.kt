@@ -26,7 +26,7 @@ data class WatchProgress(val item: StreamItem, val positionMs: Long, val duratio
  * identity ([StreamItem.url] of the MOVIE/EPISODE, e.g. "8424|dark-matter|61161").
  */
 class WatchProgressStore(context: Context) {
-  private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+  private val prefs = context.applicationContext.getSharedPreferences(ProfileScope.prefsName(context, PREFS_NAME), Context.MODE_PRIVATE)
   private val json = Json { ignoreUnknownKeys = true }
 
   private fun load(): MutableMap<String, WatchProgress> {

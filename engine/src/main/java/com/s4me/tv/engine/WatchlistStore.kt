@@ -19,7 +19,7 @@ private data class WatchlistEntry(val item: StreamItem, val addedAt: Long)
  * keyed by the content's stable identity ([StreamItem.url], e.g. "167|gomorra-la-serie").
  */
 class WatchlistStore(context: Context) {
-  private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+  private val prefs = context.applicationContext.getSharedPreferences(ProfileScope.prefsName(context, PREFS_NAME), Context.MODE_PRIVATE)
   private val json = Json { ignoreUnknownKeys = true }
 
   private fun load(): MutableMap<String, WatchlistEntry> {

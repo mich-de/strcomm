@@ -46,7 +46,9 @@ import com.s4me.tv.client.nav.CustomLists
 import com.s4me.tv.client.nav.Detail
 import com.s4me.tv.client.nav.Home
 import com.s4me.tv.client.nav.MyDownloads
+import com.s4me.tv.client.nav.MyList
 import com.s4me.tv.client.nav.Player
+import com.s4me.tv.client.nav.Profiles
 import com.s4me.tv.client.nav.Search
 import com.s4me.tv.client.nav.Settings
 import com.s4me.tv.client.nav.TvGuide
@@ -60,10 +62,14 @@ import com.s4me.tv.client.ui.guide.TvGuideScreen
 import com.s4me.tv.client.ui.home.HomeScreen
 import com.s4me.tv.client.ui.lists.CustomListDetailScreen
 import com.s4me.tv.client.ui.lists.CustomListsScreen
+import com.s4me.tv.client.ui.lists.MyListScreen
 import com.s4me.tv.client.ui.player.PlayerScreen
+import com.s4me.tv.client.ui.profiles.ProfilesScreen
+import com.s4me.tv.client.ui.profiles.restartApp
 import com.s4me.tv.client.ui.search.SearchScreen
 import com.s4me.tv.client.ui.settings.SettingsScreen
 import com.s4me.tv.engine.ChannelRegistry
+import com.s4me.tv.engine.ProfileScope
 
 /** A top-level tab: [icon] outlined, [selectedIcon] filled — Material 3's navigation pattern. */
 private data class TabDest(val label: String, @DrawableRes val icon: Int, @DrawableRes val selectedIcon: Int, val root: NavKey)
@@ -127,7 +133,8 @@ fun ClientApp() {
   val backStack = rememberNavBackStack(Home)
   var selectedTab by remember { mutableIntStateOf(0) }
   val wide = isWideScreen()
-  val activity = LocalContext.current as? Activity
+  val context = LocalContext.current
+  val activity = context as? Activity
 
   fun openTab(index: Int) {
     selectedTab = index
@@ -183,6 +190,7 @@ fun ClientApp() {
             entry<Home> {
               HomeScreen(
                 onOpen = open,
+                onOpenMyList = { backStack.add(MyList) },
                 onOpenBrowse = { extra -> catalogRoot?.let { backStack.add(Browse(it.copy(extra = extra))) } },
                 modifier = Modifier.fillMaxSize(),
               )
@@ -209,9 +217,19 @@ fun ClientApp() {
                 onOpenTvGuide = { backStack.add(TvGuide) },
                 onOpenCustomLists = { backStack.add(CustomLists) },
                 onOpenDownloads = { backStack.add(MyDownloads) },
+                onOpenProfiles = { backStack.add(Profiles) },
                 modifier = Modifier.fillMaxSize(),
               )
             }
+            entry<Profiles> {
+              val before = remember { ProfileScope.currentId(context) }
+              ProfilesScreen(
+                onPicked = { id -> if (id == before) back() else activity?.let { restartApp(it) } },
+                onBack = back,
+                modifier = Modifier.fillMaxSize(),
+              )
+            }
+            entry<MyList> { MyListScreen(onOpen = open, onBack = back, modifier = Modifier.fillMaxSize()) }
             entry<MyDownloads> { DownloadsScreen(onPlay = { backStack.add(Player(it)) }, onBack = back, modifier = Modifier.fillMaxSize()) }
             entry<TvGuide> { TvGuideScreen(onOpen = open, onBack = back, modifier = Modifier.fillMaxSize()) }
             entry<CustomLists> {

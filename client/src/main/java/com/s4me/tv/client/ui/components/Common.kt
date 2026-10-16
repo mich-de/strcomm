@@ -1,7 +1,9 @@
 package com.s4me.tv.client.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -67,14 +69,16 @@ fun ErrorScreen(message: String, onRetry: (() -> Unit)? = null, modifier: Modifi
 /** A poster tile: artwork, optional rank numeral, optional resume bar, title beneath (for the
  *  personal rows where the show name matters). Fixed [width]; height follows the 2:3 poster ratio. */
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 fun PosterCard(
   item: StreamItem,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
   width: Dp = POSTER_WIDTH,
   showLabel: Boolean = false,
+  onLongClick: (() -> Unit)? = null,
 ) {
-  Column(modifier = modifier.width(width).clickable(onClick = onClick)) {
+  Column(modifier = modifier.width(width).combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
     Box {
       AsyncImage(
         model = item.thumbnail,

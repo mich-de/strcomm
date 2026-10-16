@@ -26,7 +26,7 @@ private const val MAX_ITEMS_PER_LIST = 200
  * renaming/deleting a list is a one-key write without touching its (possibly large) item map.
  */
 class CustomListsStore(context: Context) {
-  private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+  private val prefs = context.applicationContext.getSharedPreferences(ProfileScope.prefsName(context, PREFS_NAME), Context.MODE_PRIVATE)
   private val json = Json { ignoreUnknownKeys = true }
 
   fun lists(): List<ListDef> = loadLists().sortedBy { it.createdAt }

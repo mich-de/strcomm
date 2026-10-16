@@ -1,8 +1,12 @@
 package com.s4me.tv.client.ui.search
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.speech.RecognizerIntent
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -31,6 +35,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -55,13 +60,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.s4me.tv.client.R
+import com.s4me.tv.client.notifications.AvailabilityWorker
 import com.s4me.tv.client.ui.components.PosterCard
 import com.s4me.tv.client.ui.components.Symbol
+import com.s4me.tv.client.ui.components.SymbolLabel
 import com.s4me.tv.client.ui.home.HomeSnapshot
+import com.s4me.tv.engine.AvailabilityReminderStore
 import com.s4me.tv.engine.GenreOption
 import com.s4me.tv.engine.StreamItem
 import java.text.Normalizer
@@ -108,6 +117,20 @@ fun SearchScreen(
       }
     }
   val voiceAvailable = remember { voiceIntent.resolveActivity(context.packageManager) != null }
+  // "Avvisami quando è disponibile": remembers the search and lets AvailabilityWorker re-run it. On
+  // Android 13+ the notification permission is asked for first; the reminder is stored either way.
+  val reminders = remember { AvailabilityReminderStore(context) }
+  val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+  fun remind(what: String) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+      ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+    ) {
+      notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+    val added = reminders.add(what)
+    AvailabilityWorker.schedule(context)
+    Toast.makeText(context, if (added) "Ti avviso quando «$what» sarà disponibile" else "Hai già un promemoria per «$what»", Toast.LENGTH_LONG).show()
+  }
   val voiceLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
       if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
@@ -222,6 +245,9 @@ fun SearchScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
           )
+          FilledTonalButton(onClick = { remind(query.trim()) }, modifier = Modifier.padding(top = 16.dp)) {
+            SymbolLabel(R.drawable.ic_ms_notifications, "Avvisami quando è disponibile")
+          }
           if (genres.isNotEmpty()) {
             SectionTitle("Oppure sfoglia per genere", modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
             GenreChips(genres, onOpenGenre)
