@@ -51,8 +51,10 @@ import coil3.compose.AsyncImage
 import com.s4me.tv.client.R
 import com.s4me.tv.client.nav.isWideScreen
 import com.s4me.tv.client.ui.components.ErrorScreen
+import com.s4me.tv.client.ui.components.GreyButton
 import com.s4me.tv.client.ui.components.ItemActionsSheet
 import com.s4me.tv.client.ui.components.LoadingScreen
+import com.s4me.tv.client.ui.components.PlayButton
 import com.s4me.tv.client.ui.components.PosterCard
 import com.s4me.tv.client.ui.components.RankedPosterCard
 import com.s4me.tv.client.ui.components.SheetAction
@@ -193,11 +195,18 @@ private fun HeroPager(heroes: List<StreamItem>, onOpen: (StreamItem) -> Unit) {
         if (meta.isNotBlank()) {
           Text(meta, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.85f), modifier = Modifier.padding(top = 4.dp))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 12.dp)) {
-          Button(onClick = { onOpen(hero) }) { SymbolLabel(R.drawable.ic_ms_play_arrow_fill, "Apri") }
-          OutlinedButton(onClick = { inList = watchlistStore.toggle(hero) }) {
-            SymbolLabel(if (inList) R.drawable.ic_ms_check else R.drawable.ic_ms_add, if (inList) "Nella lista" else "La mia lista")
-          }
+        // "Crime • Thriller" — the genre tags under a billboard's title (once the hero is enriched).
+        hero.genres?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.take(3)?.joinToString("  •  ")?.let {
+          Text(it, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.7f), modifier = Modifier.padding(top = 2.dp))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 14.dp)) {
+          PlayButton("Apri", R.drawable.ic_ms_play_arrow_fill, onClick = { onOpen(hero) }, modifier = Modifier.weight(1f))
+          GreyButton(
+            if (inList) "Nella lista" else "La mia lista",
+            if (inList) R.drawable.ic_ms_check else R.drawable.ic_ms_add,
+            onClick = { inList = watchlistStore.toggle(hero) },
+            modifier = Modifier.weight(1f),
+          )
         }
       }
       if (heroes.size > 1) {
@@ -227,6 +236,13 @@ private fun TypeFilterRow(docGenreId: Int?, onOpenBrowse: (String) -> Unit) {
     horizontalArrangement = Arrangement.spacedBy(8.dp),
     modifier = Modifier.padding(top = 8.dp),
   ) {
+    item {
+      AssistChip(
+        onClick = { onOpenBrowse("") },
+        label = { Text("Tutto il catalogo") },
+        leadingIcon = { Symbol(R.drawable.ic_ms_explore, size = AssistChipDefaults.IconSize) },
+      )
+    }
     item { AssistChip(onClick = { onOpenBrowse("type=movie") }, label = { Text("Film") }, leadingIcon = { Symbol(R.drawable.ic_ms_movie, size = AssistChipDefaults.IconSize) }) }
     item { AssistChip(onClick = { onOpenBrowse("type=tv") }, label = { Text("Serie TV") }, leadingIcon = { Symbol(R.drawable.ic_ms_tv, size = AssistChipDefaults.IconSize) }) }
     if (docGenreId != null) {
@@ -273,6 +289,8 @@ private fun SectionRow(
             onClick = { onOpen(item) },
             showLabel = section.channelId == CONTINUE_WATCHING_ID,
             onLongClick = onLongPress?.let { cb -> { cb(item) } },
+            showBadges = false,
+            onMenu = if (section.channelId == CONTINUE_WATCHING_ID) onLongPress?.let { cb -> { cb(item) } } else null,
           )
         }
       }

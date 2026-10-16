@@ -22,13 +22,14 @@ private val DarkColors =
     onPrimary = Color(0xFF12141A),
     secondary = Amber,
     onSecondary = Color(0xFF12141A),
-    background = Color(0xFF0B0D12),
-    onBackground = Color(0xFFECEDEE),
-    surface = Color(0xFF12141A),
-    onSurface = Color(0xFFECEDEE),
-    surfaceVariant = Color(0xFF1B1E26),
-    onSurfaceVariant = Color(0xFFA0A4AC),
-    outline = Color(0xFF3A3F4B),
+    // Near-black with neutral greys, the way a streaming app sits behind its artwork.
+    background = Color(0xFF0A0A0B),
+    onBackground = Color(0xFFF2F2F2),
+    surface = Color(0xFF141416),
+    onSurface = Color(0xFFF2F2F2),
+    surfaceVariant = Color(0xFF242427),
+    onSurfaceVariant = Color(0xFFB3B3B3),
+    outline = Color(0xFF3F3F44),
   )
 
 private val LightColors =

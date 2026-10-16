@@ -25,6 +25,10 @@ import kotlinx.serialization.Serializable
 
 @Serializable data object MyList : NavKey
 
+@Serializable data object News : NavKey
+
+@Serializable data object Me : NavKey
+
 @Serializable data object Profiles : NavKey
 
 /** Grid of a CATEGORY/LIST/SERIES/SEASON item's children (also the "detail" screen for a series). */

@@ -60,6 +60,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.s4me.tv.client.R
 import com.s4me.tv.client.ui.components.ErrorScreen
+import com.s4me.tv.client.ui.components.GreyButton
+import com.s4me.tv.client.ui.components.IconAction
+import com.s4me.tv.client.ui.components.PlayButton
 import com.s4me.tv.client.ui.components.PosterCard
 import com.s4me.tv.client.ui.components.SymbolLabel
 import com.s4me.tv.client.ui.components.TrailerView
@@ -142,7 +145,7 @@ fun DetailScreen(
       }
 
       Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 4.dp, bottom = 32.dp)) {
-        Text(display.title, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
+        Text(display.title, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold))
         display.seriesTitle?.let { Text(it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 
         val badge = (display.imdbRating ?: display.tmdbRating)?.let { "★ %.1f".format(it) } ?: display.quality
@@ -169,10 +172,7 @@ fun DetailScreen(
         )
 
         if (similar.isNotEmpty()) {
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 18.dp)) {
-            FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("Panoramica") })
-            FilterChip(selected = tab == 1, onClick = { tab = 1 }, label = { Text("Simili") })
-          }
+          UnderlineTabs(labels = listOf("Panoramica", "Simili"), selected = tab, onSelect = { tab = it }, modifier = Modifier.padding(top = 18.dp))
         }
 
         if (tab == 1 && similar.isNotEmpty()) {
@@ -230,48 +230,78 @@ private fun PlayActions(
 
   val sources = (state as? DetailUiState.Success)?.sources.orEmpty()
   val ready = sources.firstOrNull()
-  // FlowRow so Guarda / Trailer / La mia lista wrap instead of overflowing a narrow phone — and
-  // the trailer sits with the actions rather than below the plot, keeping the poster taller.
-  FlowRow(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+  // The title page's action block, in the order streaming apps put it: one white button for the
+  // thing to press, grey ones under it at full width, then a strip of icon actions.
+  Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
     if (resumeMs != null && resumeMs > 0) {
-      Button(onClick = { ready?.let(onPlay) }, enabled = ready != null) { SymbolLabel(R.drawable.ic_ms_play_arrow_fill, "Riprendi · ${formatTime(resumeMs)}") }
-      FilledTonalButton(
+      PlayButton("Riprendi · ${formatTime(resumeMs)}", R.drawable.ic_ms_play_arrow_fill, onClick = { ready?.let(onPlay) }, enabled = ready != null, modifier = Modifier.fillMaxWidth())
+      GreyButton(
+        "Ricomincia",
+        R.drawable.ic_ms_restart_alt,
         onClick = {
           progressStore.remove(item.url)
           ready?.let(onPlay)
         },
         enabled = ready != null,
-      ) { SymbolLabel(R.drawable.ic_ms_restart_alt, "Ricomincia") }
+        modifier = Modifier.fillMaxWidth(),
+      )
     } else {
-      Button(onClick = { ready?.let(onPlay) }, enabled = ready != null) {
-        if (state is DetailUiState.Loading) Text("Caricamento…") else SymbolLabel(R.drawable.ic_ms_play_arrow_fill, "Guarda")
-      }
-    }
-    item.trailerYoutubeId?.let { id -> FilledTonalButton(onClick = { onTrailer(id) }) { SymbolLabel(R.drawable.ic_ms_movie, "Trailer") } }
-    FilledTonalButton(onClick = { inList = watchlistStore.toggle(item) }) {
-      SymbolLabel(if (inList) R.drawable.ic_ms_check else R.drawable.ic_ms_add, if (inList) "Nella lista" else "La mia lista")
-    }
-    IconButton(onClick = { showListsSheet = true }) {
-      Icon(ImageVector.vectorResource(R.drawable.ic_ms_playlist_add), contentDescription = "Aggiungi a una lista personalizzata")
-    }
-    // A personal marker (kept on the device, per profile) — no recommender behind it.
-    IconButton(onClick = { rating = ratingStore.toggle(item.url, 1) }) {
-      Icon(
-        ImageVector.vectorResource(if (rating == 1) R.drawable.ic_ms_thumb_up_fill else R.drawable.ic_ms_thumb_up),
-        contentDescription = "Mi piace",
+      PlayButton(
+        if (state is DetailUiState.Loading) "Caricamento…" else "Riproduci",
+        R.drawable.ic_ms_play_arrow_fill,
+        onClick = { ready?.let(onPlay) },
+        enabled = ready != null,
+        modifier = Modifier.fillMaxWidth(),
       )
     }
-    IconButton(onClick = { rating = ratingStore.toggle(item.url, -1) }) {
-      Icon(
-        ImageVector.vectorResource(if (rating == -1) R.drawable.ic_ms_thumb_down_fill else R.drawable.ic_ms_thumb_down),
-        contentDescription = "Non mi piace",
+    DownloadButton(item = item, onPlayOffline = onPlay, modifier = Modifier.fillMaxWidth())
+
+    Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+      IconAction(
+        if (inList) R.drawable.ic_ms_check else R.drawable.ic_ms_add,
+        "La mia lista",
+        onClick = { inList = watchlistStore.toggle(item) },
+        modifier = Modifier.weight(1f),
       )
+      // A personal marker (kept on the device, per profile) — no recommender behind it.
+      IconAction(
+        if (rating == 1) R.drawable.ic_ms_thumb_up_fill else R.drawable.ic_ms_thumb_up,
+        "Mi piace",
+        onClick = { rating = ratingStore.toggle(item.url, 1) },
+        modifier = Modifier.weight(1f),
+      )
+      IconAction(
+        if (rating == -1) R.drawable.ic_ms_thumb_down_fill else R.drawable.ic_ms_thumb_down,
+        "Non mi piace",
+        onClick = { rating = ratingStore.toggle(item.url, -1) },
+        modifier = Modifier.weight(1f),
+      )
+      item.trailerYoutubeId?.let { id -> IconAction(R.drawable.ic_ms_movie, "Trailer", onClick = { onTrailer(id) }, modifier = Modifier.weight(1f)) }
+      IconAction(R.drawable.ic_ms_playlist_add, "Liste", onClick = { showListsSheet = true }, modifier = Modifier.weight(1f))
     }
-    DownloadButton(item = item, onPlayOffline = onPlay)
   }
 
   if (showListsSheet) {
     AddToListSheet(item = item, onDismiss = { showListsSheet = false })
+  }
+}
+
+/** Tabs as text with an underline under the selected one — the title page's "Panoramica | Simili". */
+@Composable
+private fun UnderlineTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+  Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+    labels.forEachIndexed { index, label ->
+      val active = index == selected
+      Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onSelect(index) }) {
+        Text(
+          label.uppercase(),
+          style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+          color = if (active) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.padding(vertical = 8.dp),
+        )
+        Box(Modifier.height(3.dp).fillMaxWidth().background(if (active) MaterialTheme.colorScheme.primary else Color.Transparent))
+      }
+    }
   }
 }
 

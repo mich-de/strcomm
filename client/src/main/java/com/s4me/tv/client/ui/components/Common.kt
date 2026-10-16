@@ -13,9 +13,12 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,7 +27,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -77,6 +82,8 @@ fun PosterCard(
   width: Dp = POSTER_WIDTH,
   showLabel: Boolean = false,
   onLongClick: (() -> Unit)? = null,
+  showBadges: Boolean = true,
+  onMenu: (() -> Unit)? = null,
 ) {
   Column(modifier = modifier.width(width).combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
     Box {
@@ -91,8 +98,20 @@ fun PosterCard(
             .background(MaterialTheme.colorScheme.surfaceVariant),
       )
       // Year (top-left) and score (top-right) badges, mirroring the TV app's poster cards.
-      item.year?.let { CornerBadge(it, Modifier.align(Alignment.TopStart)) }
-      item.quality?.let { CornerBadge(it, Modifier.align(Alignment.TopEnd)) }
+      // Rows that want the artwork clean (Home, like a streaming app's own) turn the badges off.
+      if (showBadges) {
+        item.year?.let { CornerBadge(it, Modifier.align(Alignment.TopStart)) }
+        item.quality?.let { CornerBadge(it, Modifier.align(Alignment.TopEnd)) }
+      }
+      // The ⋮ on a "continue watching" card opens the same menu as a long press.
+      onMenu?.let { open ->
+        IconButton(
+          onClick = open,
+          modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 10.dp, end = 2.dp).size(32.dp),
+        ) {
+          Icon(ImageVector.vectorResource(R.drawable.ic_ms_more_vert), contentDescription = "Altre azioni", tint = Color.White)
+        }
+      }
       item.progress?.let { p ->
         LinearProgressIndicator(
           progress = { p.coerceIn(0f, 1f) },

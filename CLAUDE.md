@@ -264,8 +264,8 @@ a run of failed pings drops back to discovery.
   `isWideScreen()` = `screenWidthDp >= 600` → `WideTopBar` (tablet / phone-landscape) — a floating
   bar with the split-color "StrComm" wordmark + the four tabs as pills, replacing a `NavigationRail`
   that ate a column of width a touch surface doesn't need; narrower → bottom `NavigationBar`.
-  `entryProvider {}` wires the tabs (Home / Cerca / Sfoglia / Impostazioni) and the pushed screens
-  (Browse / Detail / Player).
+  `entryProvider {}` wires the tabs (**Home / Novità / Cerca / Io**) and the pushed screens (Browse / Detail / Player / Settings / …). "Novità" (`NewHotScreen`) re-lists Home's catalogue and chart rows as a vertical feed of wide cards, from `HomeSnapshot.sections` (so no site request); "Io" (`MeScreen`) is the profile, the first titles of the list and the way into downloads, lists, the TV guide and Settings — Settings is no longer a tab. The old Sfoglia tab's job is now Home's "Tutto il catalogo" / Film / Serie TV chips (`BrowseRoot` is still a valid entry).
+- **Visual language** (the Netflix mobile study, our own colours and icons): near-black theme with neutral greys; a title's main action is `PlayButton` (solid white, dark text) and everything secondary is `GreyButton`, on the Home billboard and the title page alike; Home poster rows are clean (`PosterCard(showBadges = false)`), and a "Continua a guardare" card carries a ⋮ that opens the long-press sheet; the title page stacks full-width buttons, then an `IconAction` strip, then underlined tabs. No Netflix asset, font, logo or brand colour is used.
 - **`fullBleed`** = `backStack.lastOrNull() is Player` — hides the nav bar/rail and drops the
   Scaffold insets so the player is edge-to-edge. `PlayerScreen` *also* forces landscape
   (`SCREEN_ORIENTATION_SENSOR_LANDSCAPE`) and hides the system bars itself.

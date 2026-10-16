@@ -230,6 +230,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
           ?.take(6)
           .orEmpty()
       _uiState.value = HomeUiState.Success(heroCandidates, personalSections() + channelSections)
+      publishSnapshot(channelSections)
 
       // The Home is on screen from here on, and everything below only fills it in — so it runs in
       // SiteTraffic's background lane, single file and paced, instead of the ~100-request burst at
@@ -250,6 +251,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
   /** Chart rows land after the Home is up: slot each under the personal rows in [CHART_ORDER] so
    *  the page doesn't reshuffle as they arrive. */
+  /** What the "Novità" tab shows: the site's and the charts' rows, without personal or genre ones. */
+  private fun publishSnapshot(sections: List<HomeSection>) {
+    HomeSnapshot.sections = sections.filter { it.channelId != CONTINUE_WATCHING_ID && it.channelId != WATCHLIST_ID && !it.channelId.startsWith("genre-") }
+  }
+
   private fun placeChartRow(row: HomeSection) =
     _uiState.update { state ->
       if (state !is HomeUiState.Success) return@update state
@@ -258,6 +264,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         (state.sections.filter { it.channelId in CHART_ORDER && it.channelId != row.channelId } + row)
           .sortedBy { CHART_ORDER.indexOf(it.channelId) }
       val rest = state.sections.filterNot { isPersonal(it) || it.channelId in CHART_ORDER }
+      publishSnapshot(charts + rest)
       state.copy(sections = state.sections.filter(isPersonal) + charts + rest)
     }
 

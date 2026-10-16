@@ -1,5 +1,6 @@
 package com.s4me.tv.client.ui.home
 
+import com.s4me.tv.engine.HomeSection
 import com.s4me.tv.engine.StreamItem
 
 /**
@@ -10,4 +11,8 @@ import com.s4me.tv.engine.StreamItem
  */
 object HomeSnapshot {
   @Volatile var trending: List<StreamItem> = emptyList()
+
+  /** The Home's catalogue and chart rows (not the personal ones, not the per-genre ones), in Home's
+   *  order — what the "Novità" tab lists again as a feed. Refreshed whenever Home's rows change. */
+  @Volatile var sections: List<HomeSection> = emptyList()
 }

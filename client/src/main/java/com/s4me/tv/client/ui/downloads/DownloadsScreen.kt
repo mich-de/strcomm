@@ -56,6 +56,7 @@ import com.s4me.tv.client.download.Downloads
 import com.s4me.tv.client.download.DownloadsStore
 import com.s4me.tv.client.download.KEY_ERROR
 import com.s4me.tv.client.download.KEY_PROGRESS
+import com.s4me.tv.client.ui.components.GreyButton
 import com.s4me.tv.client.ui.components.SymbolLabel
 import com.s4me.tv.engine.CacheUtil
 import com.s4me.tv.engine.StreamItem
@@ -103,14 +104,18 @@ fun DownloadButton(item: StreamItem, onPlayOffline: (StreamItem) -> Unit, modifi
   }
   Column(modifier = modifier) {
     when (state) {
-      DownloadUiState.None -> FilledTonalButton(onClick = start) { SymbolLabel(R.drawable.ic_ms_download, "Scarica") }
+      DownloadUiState.None -> GreyButton("Scarica", R.drawable.ic_ms_download, onClick = start, modifier = Modifier.fillMaxWidth())
       is DownloadUiState.Running ->
-        FilledTonalButton(onClick = { Downloads.cancel(context, item.url) }) {
-          SymbolLabel(R.drawable.ic_ms_close, state.progress?.let { "Annulla download · ${(it * 100).toInt()}%" } ?: "Annulla download")
-        }
-      is DownloadUiState.Done -> FilledTonalButton(onClick = { onPlayOffline(state.record.playable()) }) { SymbolLabel(R.drawable.ic_ms_play_circle_fill, "Guarda offline") }
+        GreyButton(
+          state.progress?.let { "Annulla download · ${(it * 100).toInt()}%" } ?: "Annulla download",
+          R.drawable.ic_ms_close,
+          onClick = { Downloads.cancel(context, item.url) },
+          modifier = Modifier.fillMaxWidth(),
+        )
+      is DownloadUiState.Done ->
+        GreyButton("Guarda offline", R.drawable.ic_ms_play_circle_fill, onClick = { onPlayOffline(state.record.playable()) }, modifier = Modifier.fillMaxWidth())
       is DownloadUiState.Failed -> {
-        FilledTonalButton(onClick = start) { SymbolLabel(R.drawable.ic_ms_refresh, "Riprova download") }
+        GreyButton("Riprova download", R.drawable.ic_ms_refresh, onClick = start, modifier = Modifier.fillMaxWidth())
         Text(
           state.message,
           style = MaterialTheme.typography.bodySmall,

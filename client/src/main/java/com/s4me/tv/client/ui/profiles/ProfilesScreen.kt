@@ -44,6 +44,7 @@ import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.s4me.tv.client.R
@@ -166,18 +167,26 @@ fun ProfilesScreen(onPicked: (String) -> Unit, modifier: Modifier = Modifier, on
   }
 }
 
+/** A profile's round avatar: its colour with its initial. */
+@Composable
+fun ProfileAvatar(profile: Profile, size: Dp, modifier: Modifier = Modifier) {
+  Box(
+    contentAlignment = Alignment.Center,
+    modifier = modifier.size(size).clip(CircleShape).background(AVATAR_COLORS[profile.colorIndex % AVATAR_COLORS.size]),
+  ) {
+    Text(
+      profile.name.firstOrNull()?.uppercase() ?: "?",
+      style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold, fontSize = (size.value * 0.42f).sp),
+      color = Color.White,
+    )
+  }
+}
+
 @Composable
 private fun ProfileTile(profile: Profile, manage: Boolean, current: Boolean, onClick: () -> Unit) {
   Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = onClick)) {
-    Box(
-      contentAlignment = Alignment.Center,
-      modifier = Modifier.size(96.dp).clip(CircleShape).background(AVATAR_COLORS[profile.colorIndex % AVATAR_COLORS.size]),
-    ) {
-      Text(
-        profile.name.firstOrNull()?.uppercase() ?: "?",
-        style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold, fontSize = 40.sp),
-        color = Color.White,
-      )
+    Box(contentAlignment = Alignment.Center) {
+      ProfileAvatar(profile, size = 96.dp)
       if (manage) {
         Box(Modifier.size(96.dp).background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {
           Symbol(R.drawable.ic_ms_edit, tint = Color.White, size = 32.dp)

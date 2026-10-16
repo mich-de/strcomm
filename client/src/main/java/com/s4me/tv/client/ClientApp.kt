@@ -45,8 +45,10 @@ import com.s4me.tv.client.nav.CustomListDetail
 import com.s4me.tv.client.nav.CustomLists
 import com.s4me.tv.client.nav.Detail
 import com.s4me.tv.client.nav.Home
+import com.s4me.tv.client.nav.Me
 import com.s4me.tv.client.nav.MyDownloads
 import com.s4me.tv.client.nav.MyList
+import com.s4me.tv.client.nav.News
 import com.s4me.tv.client.nav.Player
 import com.s4me.tv.client.nav.Profiles
 import com.s4me.tv.client.nav.Search
@@ -63,6 +65,8 @@ import com.s4me.tv.client.ui.home.HomeScreen
 import com.s4me.tv.client.ui.lists.CustomListDetailScreen
 import com.s4me.tv.client.ui.lists.CustomListsScreen
 import com.s4me.tv.client.ui.lists.MyListScreen
+import com.s4me.tv.client.ui.me.MeScreen
+import com.s4me.tv.client.ui.news.NewHotScreen
 import com.s4me.tv.client.ui.player.PlayerScreen
 import com.s4me.tv.client.ui.profiles.ProfilesScreen
 import com.s4me.tv.client.ui.profiles.restartApp
@@ -77,9 +81,9 @@ private data class TabDest(val label: String, @DrawableRes val icon: Int, @Drawa
 private val TABS =
   listOf(
     TabDest("Home", R.drawable.ic_ms_home, R.drawable.ic_ms_home_fill, Home),
+    TabDest("Novità", R.drawable.ic_ms_local_fire_department, R.drawable.ic_ms_local_fire_department_fill, News),
     TabDest("Cerca", R.drawable.ic_ms_search, R.drawable.ic_ms_search, Search()),
-    TabDest("Sfoglia", R.drawable.ic_ms_explore, R.drawable.ic_ms_explore_fill, BrowseRoot),
-    TabDest("Impostazioni", R.drawable.ic_ms_settings, R.drawable.ic_ms_settings_fill, Settings),
+    TabDest("Io", R.drawable.ic_ms_account_circle, R.drawable.ic_ms_account_circle_fill, Me),
   )
 
 // Tablet/wide-screen top bar — replaces the NavigationRail. A permanent icon+label rail eats a
@@ -226,6 +230,19 @@ fun ClientApp() {
               ProfilesScreen(
                 onPicked = { id -> if (id == before) back() else activity?.let { restartApp(it) } },
                 onBack = back,
+                modifier = Modifier.fillMaxSize(),
+              )
+            }
+            entry<News> { NewHotScreen(onOpen = open, modifier = Modifier.fillMaxSize()) }
+            entry<Me> {
+              MeScreen(
+                onOpen = open,
+                onOpenProfiles = { backStack.add(Profiles) },
+                onOpenMyList = { backStack.add(MyList) },
+                onOpenDownloads = { backStack.add(MyDownloads) },
+                onOpenLists = { backStack.add(CustomLists) },
+                onOpenGuide = { backStack.add(TvGuide) },
+                onOpenSettings = { backStack.add(Settings) },
                 modifier = Modifier.fillMaxSize(),
               )
             }
