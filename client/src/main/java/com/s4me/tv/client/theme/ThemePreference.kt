@@ -12,14 +12,15 @@ private const val PREFS_NAME = "theme"
 private const val KEY_MODE = "mode"
 
 /**
- * Manual light/dark override. SYSTEM (default) follows the device setting, same as before this
- * existed; LIGHT/DARK pin it regardless. A process-wide singleton, same shape as the TV app's
+ * Manual light/dark override. DARK is the default — a streaming app is a dark surface whatever the
+ * phone's own setting (a fresh device in light mode showed a white Home); SYSTEM follows the device,
+ * LIGHT pins light. A process-wide singleton, same shape as the TV app's
  * PlaybackControlBridge/RemoteControlBridge — since the setter lives in SettingsScreen but the
  * reader is the theme root wrapping the whole nav graph in MainActivity, with no direct
  * parent-child composition link between the two.
  */
 object ThemePreference {
-  private val _mode = MutableStateFlow(ThemeMode.SYSTEM)
+  private val _mode = MutableStateFlow(ThemeMode.DARK)
   val mode: StateFlow<ThemeMode> = _mode.asStateFlow()
 
   private var prefs: SharedPreferences? = null
@@ -27,7 +28,7 @@ object ThemePreference {
   /** Call once, early (MainActivity.onCreate before setContent), to restore the saved choice. */
   fun load(context: Context) {
     val p = prefs(context)
-    _mode.value = runCatching { ThemeMode.valueOf(p.getString(KEY_MODE, null) ?: ThemeMode.SYSTEM.name) }.getOrDefault(ThemeMode.SYSTEM)
+    _mode.value = runCatching { ThemeMode.valueOf(p.getString(KEY_MODE, null) ?: ThemeMode.DARK.name) }.getOrDefault(ThemeMode.DARK)
   }
 
   fun set(context: Context, mode: ThemeMode) {

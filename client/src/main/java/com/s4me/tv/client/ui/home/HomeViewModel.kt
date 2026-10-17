@@ -216,6 +216,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             .awaitAll()
             .flatten()
         }
+          // The engine's first row is named after the source and opens with a "Sfoglia" catalogue
+          // card — the TV app's D-pad way into Browse. Here the type pills over the billboard already
+          // do that, so the row is just the site's trending titles, titled as a streaming app would.
+          // An unreachable site leaves that row with nothing else in it, and the Error state below
+          // says so instead of a lone blank card.
+          .map { section ->
+            val titles = section.items.filterNot { it.kind == ItemKind.LIST || it.kind == ItemKind.CATEGORY }
+            if (section.channelId.endsWith("-root")) section.copy(title = "Di tendenza ora", items = titles) else section.copy(items = titles)
+          }
+          .filter { it.items.isNotEmpty() }
       if (channelSections.isEmpty()) {
         _uiState.value = HomeUiState.Error("Nessun canale raggiungibile al momento")
         return@launch
