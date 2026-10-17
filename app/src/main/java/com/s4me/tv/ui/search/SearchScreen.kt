@@ -127,7 +127,7 @@ fun SearchScreen(
       modifier = Modifier.padding(top = 4.dp),
     )
 
-    // Dark, rounded search bar with an amber focus ring — reads as part of the app instead of the
+    // Dark, rounded search bar with a red focus ring — reads as part of the app instead of the
     // bright stock Material field that clashed with the dark TV surface.
     TextField(
       value = query,

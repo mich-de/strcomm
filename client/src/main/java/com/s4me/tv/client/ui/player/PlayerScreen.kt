@@ -721,7 +721,7 @@ private fun InfoPanel(item: StreamItem, stats: PlaybackStats, bufferedAheadMs: L
       modifier
         .fillMaxHeight()
         .width(360.dp)
-        .background(Color(0xFF12141A).copy(alpha = 0.97f))
+        .background(Color(0xFF141414).copy(alpha = 0.97f))
         .windowInsetsPadding(WindowInsets.safeDrawing)
         .verticalScroll(rememberScrollState())
         .padding(22.dp)
@@ -795,7 +795,7 @@ private fun StatRow(label: String, value: String) {
 
 @Composable
 private fun NextUpCard(next: StreamItem, secondsLeft: Int, onPlayNow: () -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
-  Column(modifier = modifier.width(320.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF12141A))) {
+  Column(modifier = modifier.width(320.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF141414))) {
     Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(MaterialTheme.colorScheme.surfaceVariant).noRippleClick(onPlayNow)) {
       AsyncImage(
         model = next.thumbnail ?: next.backdrop,

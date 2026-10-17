@@ -568,7 +568,7 @@ private fun TracksMenu(exoPlayer: ExoPlayer, onClose: () -> Unit, modifier: Modi
         Modifier.align(Alignment.CenterEnd)
           .padding(24.dp)
           .width(380.dp)
-          .background(Color(0xFF161921), RoundedCornerShape(14.dp))
+          .background(Color(0xFF1A1A1A), RoundedCornerShape(14.dp))
           .padding(24.dp)
           // Subtitle lists can be long (vixcloud ships many languages) — scrollable so D-pad
           // focus can reach every entry instead of walking off the clipped bottom.

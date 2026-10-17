@@ -62,6 +62,7 @@ import com.s4me.tv.client.ui.components.HomeSkeleton
 import com.s4me.tv.client.ui.components.GreyButton
 import com.s4me.tv.client.ui.components.ItemActionsSheet
 import com.s4me.tv.client.ui.components.LocalTopInset
+import com.s4me.tv.client.ui.components.StrCommWordmark
 import com.s4me.tv.client.ui.components.PlayButton
 import com.s4me.tv.client.ui.components.PosterCard
 import com.s4me.tv.client.ui.components.RankedPosterCard
@@ -115,11 +116,14 @@ fun HomeScreen(
             item {
               Box {
                 HeroPager(heroes = s.heroes, topInset = topInset, onOpen = onOpen)
-                TypeFilterRow(
-                  docGenreId = docGenreId,
-                  onOpenBrowse = onOpenBrowse,
-                  modifier = Modifier.align(Alignment.TopStart).fillMaxWidth().padding(top = topInset + 8.dp),
-                )
+                // The app's mark over the billboard's top-left, then the type pills — a streaming app's
+                // phone home. On a wide screen the top bar already carries the mark.
+                Column(modifier = Modifier.align(Alignment.TopStart).fillMaxWidth().padding(top = topInset + 8.dp)) {
+                  if (!isWideScreen()) {
+                    StrCommWordmark(strColor = Color.White, modifier = Modifier.padding(start = 16.dp, bottom = 6.dp))
+                  }
+                  TypeFilterRow(docGenreId = docGenreId, onOpenBrowse = onOpenBrowse, modifier = Modifier.fillMaxWidth())
+                }
               }
             }
           } else {

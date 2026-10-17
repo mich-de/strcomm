@@ -344,7 +344,7 @@ private fun CompactFilterHeader(
   }
 }
 
-/** A compact dropdown pill: dim category label + current value + ▾. Amber when its filter deviates
+/** A compact dropdown pill: dim category label + current value + ▾. Red when its filter deviates
  *  from the default, so active filters stay visible at a glance even with the pickers closed. */
 @Composable
 private fun FilterPill(label: String, value: String, active: Boolean, onClick: () -> Unit) {
@@ -401,7 +401,7 @@ private fun FilterPickerDialog(spec: PickerSpec, onSelect: (Any?) -> Unit, onDis
       modifier =
         Modifier.width(380.dp)
           .heightIn(max = 440.dp)
-          .background(Color(0xFF161921), RoundedCornerShape(14.dp))
+          .background(Color(0xFF1A1A1A), RoundedCornerShape(14.dp))
           .padding(vertical = 18.dp),
     ) {
       Text(

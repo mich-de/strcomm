@@ -35,10 +35,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
@@ -63,6 +59,7 @@ import com.s4me.tv.client.nav.isWideScreen
 import com.s4me.tv.client.nav.navKeyFor
 import com.s4me.tv.client.ui.browse.BrowseScreen
 import com.s4me.tv.client.ui.components.LocalTopInset
+import com.s4me.tv.client.ui.components.StrCommWordmark
 import com.s4me.tv.client.ui.components.Symbol
 import com.s4me.tv.client.ui.detail.DetailScreen
 import com.s4me.tv.client.ui.downloads.DownloadsScreen
@@ -104,15 +101,7 @@ private fun WideTopBar(selectedTab: Int, onSelect: (Int) -> Unit) {
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(28.dp),
     ) {
-      Text(
-        text =
-          buildAnnotatedString {
-            withStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface)) { append("Str") }
-            withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) { append("Comm") }
-          },
-        style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.Black,
-      )
+      StrCommWordmark()
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TABS.forEachIndexed { i, t ->
           val selected = selectedTab == i

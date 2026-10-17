@@ -2,6 +2,6 @@
 <resources>
     <!-- Mirrors the Compose palette in theme/Theme.kt — the base window theme renders before any
          Compose code, so these are kept in sync by hand. -->
-    <color name="background_dark">#0B0D12</color>
-    <color name="accent_amber">#FFA726</color>
+    <color name="background_dark">#000000</color>
+    <color name="accent_red">#E53935</color>
 </resources>

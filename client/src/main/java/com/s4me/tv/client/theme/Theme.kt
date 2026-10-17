@@ -11,41 +11,42 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-// Brand palette — same amber accent as the TV app, tuned for a touch surface. Dark is the primary
-// look (a streaming app), but a light scheme is provided so the system setting is respected.
-private val Amber = Color(0xFFFFA726)
-private val AmberDark = Color(0xFFB26A12)
+// Brand palette — same red accent as the TV app ("simil netflix anche nei colori": black, neutral
+// greys, one red). Material's own Red 600, not Netflix's brand red. Dark is the primary look, but a
+// light scheme is provided for Settings' "Chiaro".
+private val Red = Color(0xFFE53935)
+private val RedDark = Color(0xFFC62828)
 
 private val DarkColors =
   darkColorScheme(
-    primary = Amber,
-    onPrimary = Color(0xFF12141A),
-    secondary = Amber,
-    onSecondary = Color(0xFF12141A),
-    // Near-black with neutral greys, the way a streaming app sits behind its artwork.
-    background = Color(0xFF0A0A0B),
+    primary = Red,
+    onPrimary = Color.White,
+    secondary = Red,
+    onSecondary = Color.White,
+    // Pure black with neutral greys, the way a streaming app sits behind its artwork.
+    background = Color(0xFF000000),
     onBackground = Color(0xFFF2F2F2),
-    surface = Color(0xFF141416),
+    surface = Color(0xFF121212),
     onSurface = Color(0xFFF2F2F2),
-    surfaceVariant = Color(0xFF242427),
+    surfaceVariant = Color(0xFF232323),
     onSurfaceVariant = Color(0xFFB3B3B3),
-    outline = Color(0xFF3F3F44),
+    outline = Color(0xFF404040),
     // Tonal containers (selected chips, tonal buttons, the bottom bar) default to M3's lavender; these are the greys of
     // GreyButton and the poster rows instead.
-    secondaryContainer = Color(0xFF3A3A3C),
+    secondaryContainer = Color(0xFF333333),
     onSecondaryContainer = Color(0xFFF2F2F2),
-    surfaceContainerLowest = Color(0xFF0A0A0B),
-    surfaceContainerLow = Color(0xFF101012),
-    surfaceContainer = Color(0xFF141416),
-    surfaceContainerHigh = Color(0xFF1C1C1F),
-    surfaceContainerHighest = Color(0xFF242427),
+    surfaceContainerLowest = Color(0xFF000000),
+    surfaceContainerLow = Color(0xFF0D0D0D),
+    surfaceContainer = Color(0xFF121212),
+    surfaceContainerHigh = Color(0xFF1A1A1A),
+    surfaceContainerHighest = Color(0xFF232323),
   )
 
 private val LightColors =
   lightColorScheme(
-    primary = AmberDark,
+    primary = RedDark,
     onPrimary = Color.White,
-    secondary = AmberDark,
+    secondary = RedDark,
     background = Color(0xFFFDFBF7),
     onBackground = Color(0xFF1A1C22),
     surface = Color(0xFFFFFFFF),

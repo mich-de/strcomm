@@ -6,9 +6,9 @@ import androidx.tv.material3.darkColorScheme
 
 private val S4meDarkColorScheme =
   darkColorScheme(
-    primary = AccentAmber,
-    onPrimary = SurfaceDark,
-    secondary = AccentAmberDim,
+    primary = AccentRed,
+    onPrimary = OnDark,
+    secondary = AccentRedDim,
     onSecondary = OnDark,
     background = BackgroundDark,
     onBackground = OnDark,
@@ -16,7 +16,7 @@ private val S4meDarkColorScheme =
     onSurface = OnDark,
     surfaceVariant = SurfaceDarkElevated,
     onSurfaceVariant = OnDarkMuted,
-    border = AccentAmber,
+    border = AccentRed,
   )
 
 @Composable
