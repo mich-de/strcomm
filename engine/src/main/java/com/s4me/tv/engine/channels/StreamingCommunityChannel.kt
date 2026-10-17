@@ -327,6 +327,8 @@ class StreamingCommunityChannel : Channel {
       tmdbRating = tmdb?.voteAverage,
       tmdbVotes = tmdb?.voteCount,
       trailerYoutubeId = tmdb?.trailerYoutubeId ?: extractTrailerId(title),
+      // TMDB's 780 px poster over the site's 200×300 one, which blurs as a phone-wide billboard.
+      thumbnail = tmdb?.posterUrl ?: item.thumbnail,
     )
   }
 

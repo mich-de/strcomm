@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.Request
 
-private const val RELEASES_API = "https://api.github.com/repos/mich-de/strcomm/releases/tags/v1.0.0"
+private const val LATEST_RELEASE_API = "https://api.github.com/repos/mich-de/strcomm/releases/latest"
 private val json = Json { ignoreUnknownKeys = true }
 
 @Serializable
@@ -20,50 +20,61 @@ private data class GhAsset(
   val size: Long,
 )
 
-@Serializable private data class GhRelease(val assets: List<GhAsset>)
+@Serializable private data class GhRelease(@SerialName("tag_name") val tagName: String, val assets: List<GhAsset>)
 
 /** What [UpdateChecker.check] found: the asset to offer, ready to hand to [UpdateChecker.download]. */
 data class AppUpdate(val assetName: String, val downloadUrl: String, val sizeBytes: Long, val updatedAt: String)
 
 /**
- * Checks this app's own asset on the GitHub release for an update. "Versions never move" here —
- * every app stays `1.0.0` forever and the `v1.0.0` release's APKs are replaced in place instead —
- * so there is no version number to compare, only the asset's own `updated_at` timestamp (an
- * ISO-8601 UTC string, which sorts correctly as plain text). The last timestamp a device has
- * already been offered is kept in SharedPreferences (device-level, not per-profile — an update
- * notice isn't personal data) so a dismissed offer doesn't reappear on every check, and a fresh
- * install's very first check never announces an "update" for whatever was already live when it
- * was built.
+ * Checks the repo's latest GitHub release for a newer build of this app. Releases are versioned
+ * ("salva questa versione 1.0.1"): a release tagged above the installed versionName is an update.
+ * A release's APKs can also still be replaced in place without a new tag, so at the SAME version
+ * the asset's own `updated_at` (ISO-8601 UTC, sorts as plain text) decides, against the last one
+ * this device was offered — kept per installed version in SharedPreferences (device-level, not
+ * per-profile), so a dismissed offer doesn't reappear and the first check after installing a
+ * version, however it was installed, records the baseline instead of offering the build itself.
+ * Assets are found by name prefix ("StrComm-Mobile-Tablet-"), since the name carries the version.
  */
 object UpdateChecker {
   private const val PREFS = "update_checker"
   private const val KEY_SEEN = "seen_updated_at"
 
-  /** Keyless GitHub REST call — null on any failure (offline, rate-limited, asset renamed), never
+  /** Keyless GitHub REST call — null on any failure (offline, rate-limited, asset missing), never
    *  thrown to the caller; an update check failing silently is correct, not an error to surface. */
-  suspend fun check(context: Context, assetName: String): AppUpdate? =
+  suspend fun check(context: Context, assetPrefix: String): AppUpdate? =
     withContext(Dispatchers.IO) {
       val release =
-        runCatching { json.decodeFromString<GhRelease>(Net.get(RELEASES_API, headers = mapOf("Accept" to "application/vnd.github+json"))) }
+        runCatching { json.decodeFromString<GhRelease>(Net.get(LATEST_RELEASE_API, headers = mapOf("Accept" to "application/vnd.github+json"))) }
           .getOrNull() ?: return@withContext null
-      val asset = release.assets.firstOrNull { it.name == assetName } ?: return@withContext null
+      val asset = release.assets.firstOrNull { it.name.startsWith(assetPrefix) && it.name.endsWith(".apk") } ?: return@withContext null
+      val update = AppUpdate(asset.name, asset.downloadUrl, asset.size, asset.updatedAt)
+      val installed = appVersionName(context)
+      val order = compareVersions(release.tagName.removePrefix("v"), installed)
+      if (order > 0) return@withContext update
+      if (order < 0) return@withContext null
       val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-      val seen = prefs.getString(KEY_SEEN, null)
+      val key = "$KEY_SEEN:$installed"
+      val seen = prefs.getString(key, null)
       if (seen == null) {
-        // First check this device has ever made: whatever is live right now IS this install —
-        // record it as the baseline instead of announcing it as new.
-        prefs.edit().putString(KEY_SEEN, asset.updatedAt).apply()
+        prefs.edit().putString(key, asset.updatedAt).apply()
         return@withContext null
       }
-      if (asset.updatedAt <= seen) return@withContext null
-      AppUpdate(asset.name, asset.downloadUrl, asset.size, asset.updatedAt)
+      if (asset.updatedAt <= seen) null else update
     }
 
-  /** Call once an update has been shown to the user (accepted or dismissed either way), so the
-   *  same build isn't offered again next check — re-nagging every launch about something already
-   *  seen would be worse than not checking at all. */
+  /** Numeric dotted-version order ("1.0.10" > "1.0.9"); a non-numeric part counts as 0. */
+  private fun compareVersions(a: String, b: String): Int {
+    val x = a.split('.').map { it.toIntOrNull() ?: 0 }
+    val y = b.split('.').map { it.toIntOrNull() ?: 0 }
+    for (i in 0 until maxOf(x.size, y.size)) {
+      val d = x.getOrElse(i) { 0 }.compareTo(y.getOrElse(i) { 0 })
+      if (d != 0) return d
+    }
+    return 0
+  }
+
   fun markSeen(context: Context, update: AppUpdate) {
-    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_SEEN, update.updatedAt).apply()
+    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("$KEY_SEEN:${appVersionName(context)}", update.updatedAt).apply()
   }
 
   /** Streams [update]'s APK into `context.cacheDir/updates/<assetName>`, overwriting any previous

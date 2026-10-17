@@ -42,6 +42,9 @@ object Tmdb {
     val trailerYoutubeId: String?,
     val overviewIt: String?,
     val genresIt: String?,
+    /** A sharp portrait poster (780 px wide). The source site's own posters are 200×300 — fine for a
+     *  row card, blurry blown up to a phone-wide billboard ("troppo sgranata l'immagine"). */
+    val posterUrl: String? = null,
   )
 
   /** One movie in a TMDB "belongs_to_collection" set — enough for the channel to resolve it to a
@@ -57,6 +60,7 @@ object Tmdb {
 
   private const val API_BASE = "https://api.themoviedb.org/3"
   private const val SITE_BASE = "https://www.themoviedb.org"
+  private const val POSTER_BASE = "https://image.tmdb.org/t/p/w780"
   @Volatile private var apiKey = BuildConfig.TMDB_API_KEY
   private val cache = ConcurrentHashMap<String, Info>()
   private val seasonCache = ConcurrentHashMap<String, String>()
@@ -107,6 +111,7 @@ object Tmdb {
               .joinToString(", ")
               .takeIf { it.isNotBlank() }
           },
+        posterUrl = obj.optString("poster_path").takeIf { it.startsWith("/") }?.let { "$POSTER_BASE$it" },
       )
     }.getOrNull()
 
@@ -125,8 +130,14 @@ object Tmdb {
           ?.toDoubleOrNull()
           ?.let { it / 10.0 }
           ?.takeIf { it in 0.1..10.0 }
-      if (overview == null && rating == null) null
-      else Info(voteAverage = rating, voteCount = null, trailerYoutubeId = null, overviewIt = overview, genresIt = null)
+      // The page's first og:image is the (localised) poster at w500; TMDB serves the same file at
+      // any listed width, so ask for w780.
+      val poster =
+        doc.select("meta[property=og:image]").firstOrNull()?.attr("content")
+          ?.takeIf { it.contains("/t/p/") }
+          ?.replace(Regex("/t/p/[^/]+/"), "/t/p/w780/")
+      if (overview == null && rating == null && poster == null) null
+      else Info(voteAverage = rating, voteCount = null, trailerYoutubeId = null, overviewIt = overview, genresIt = null, posterUrl = poster)
     }.getOrNull()
 
   /** Italian synopsis for one season — the source site ships `seasons[].plot` in English for

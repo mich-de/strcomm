@@ -123,9 +123,8 @@ fun SettingsScreen(
     }
 
   // "Hai installato?" / "possiamo prevedere che se l'app trova un update su github lo fa notare
-  // e lo installa?" — versions never move here (always 1.0.0, the v1.0.0 release's APKs are
-  // replaced in place), so UpdateChecker compares the release asset's own upload timestamp
-  // instead of a version number. ASSET_NAME must match this app's exact asset name on the release.
+  // e lo installa?" — UpdateChecker reads the latest GitHub release: a higher version, or the same
+  // version's APK replaced in place. UPDATE_ASSET_PREFIX must match this app's asset name there.
   var checkingUpdate by remember { mutableStateOf(false) }
   var availableUpdate by remember { mutableStateOf<AppUpdate?>(null) }
   var downloadProgress by remember { mutableFloatStateOf(-1f) }
@@ -143,7 +142,7 @@ fun SettingsScreen(
       onClick = {
         checkingUpdate = true
         scope.launch {
-          val update = withContext(Dispatchers.IO) { UpdateChecker.check(context, UPDATE_ASSET_NAME) }
+          val update = withContext(Dispatchers.IO) { UpdateChecker.check(context, UPDATE_ASSET_PREFIX) }
           checkingUpdate = false
           if (update != null) availableUpdate = update
           else Toast.makeText(context, "Hai già la build più recente", Toast.LENGTH_SHORT).show()
@@ -369,9 +368,9 @@ fun SettingsScreen(
   }
 }
 
-/** This app's own asset name on the GitHub release — must match exactly what `gh release upload`
- *  names it, or UpdateChecker never finds a match. */
-private const val UPDATE_ASSET_NAME = "StrComm-Mobile-Tablet-v1.0.0.apk"
+/** This app's asset name on a GitHub release, up to the version ("…-v1.0.1.apk") — must match what
+ *  `gh release upload` names it, or UpdateChecker never finds it. */
+private const val UPDATE_ASSET_PREFIX = "StrComm-Mobile-Tablet-"
 
 /** Fires the system's own APK-install flow via a content:// URI (FileProvider — a bare file:// path
  *  is blocked on API 24+). Android still shows its own "install unknown apps" confirmation if this

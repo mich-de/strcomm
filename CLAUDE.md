@@ -73,12 +73,7 @@ only rating/metadata enrichment scrapes (IMDb, TMDB). See `README.md` for the us
   `*-release-unsigned.apk`).
 - `*.apk`, `*.jks`, `*.keystore`, `keystore.properties`, `local.properties` are gitignored and
   must never be committed. APKs staged at the repo root are for manual GitHub Release upload only.
-- **Versions never move**: all three apps are versionName `1.0.0` / versionCode `1`, and GitHub has
-  one release, `v1.0.0`, whose APKs are replaced in place (asset names
-  `StrComm-{TVBox-FireStick,Mobile-Tablet,Remote}-v1.0.0.apk`). On 2026-09-29 the whole history
-  was squashed into a single "StrComm 1.0.0" commit and the release recreated on it. Settings (and
-  the Remote's first screen) show the installed versionName via `appVersionName()` (`engine/AppInfo.kt`)
-  next to "app a uso esclusivamente personale".
+- **Versions**: all three apps share one versionName/versionCode (now `1.0.1` / `2`, set in each module's `build.gradle.kts`), and each version is a GitHub release `v<version>` with assets `StrComm-{TVBox-FireStick,Mobile-Tablet,Remote}-v<version>.apk`. Until 2026-10-17 versions never moved (one `v1.0.0` release whose APKs were replaced in place; on 2026-09-29 the history was squashed into a single "StrComm 1.0.0" commit); then the user asked for `1.0.1` ("salva questa versione 1.0.1 su github"). A release's APKs can still be replaced in place without a new tag. The in-app updater (`engine/UpdateChecker.kt`, Settings → "Verifica aggiornamenti" in `:app`/`:client`) reads `releases/latest` and finds the app's asset by name prefix: a higher tag than the installed versionName is an update; at the same version the asset's `updated_at` against a per-version baseline decides. Builds before 1.0.1 only ever look at release `v1.0.0` for the exact `…-v1.0.0.apk` names, so `v1.0.0`'s assets carry the 1.0.1 build too — that's how those installs reach 1.0.1. Settings (and the Remote's first screen) show the installed versionName via `appVersionName()` (`engine/AppInfo.kt`) next to "app a uso esclusivamente personale".
 
 ## On-device testing (no emulator needed)
 

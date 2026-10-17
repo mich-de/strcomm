@@ -83,9 +83,8 @@ fun SettingsScreen(onNavigate: (NavKey) -> Unit = {}, modifier: Modifier = Modif
   fun toast(message: String) = Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
 
   // "Hai installato?" / "possiamo prevedere che se l'app trova un update su github lo fa notare e
-  // lo installa?" — versions never move here (always 1.0.0, the v1.0.0 release's APKs are replaced
-  // in place), so UpdateChecker compares the release asset's own upload timestamp instead of a
-  // version number. Inline, not a dialog: this file has no popup/overlay pattern elsewhere and a
+  // lo installa?" — UpdateChecker reads the latest GitHub release: a higher version, or the same
+  // version's APK replaced in place. Inline, not a dialog: this file has no popup/overlay pattern elsewhere and a
   // D-pad-only app is simpler without one to focus-trap into.
   var checkingUpdate by remember { mutableStateOf(false) }
   var availableUpdate by remember { mutableStateOf<AppUpdate?>(null) }
@@ -170,7 +169,7 @@ fun SettingsScreen(onNavigate: (NavKey) -> Unit = {}, modifier: Modifier = Modif
         onClick = {
           checkingUpdate = true
           scope.launch {
-            val found = withContext(Dispatchers.IO) { UpdateChecker.check(context, UPDATE_ASSET_NAME) }
+            val found = withContext(Dispatchers.IO) { UpdateChecker.check(context, UPDATE_ASSET_PREFIX) }
             checkingUpdate = false
             availableUpdate = found
             if (found == null) toast("Hai già la build più recente")
@@ -346,9 +345,9 @@ fun SettingsScreen(onNavigate: (NavKey) -> Unit = {}, modifier: Modifier = Modif
   }
 }
 
-/** This app's own asset name on the GitHub release — must match exactly what `gh release upload`
- *  names it, or UpdateChecker never finds a match. */
-private const val UPDATE_ASSET_NAME = "StrComm-TVBox-FireStick-v1.0.0.apk"
+/** This app's asset name on a GitHub release, up to the version ("…-v1.0.1.apk") — must match what
+ *  `gh release upload` names it, or UpdateChecker never finds it. */
+private const val UPDATE_ASSET_PREFIX = "StrComm-TVBox-FireStick-"
 
 /** Fires the system's own APK-install flow via a content:// URI (FileProvider — a bare file:// path
  *  is blocked on API 24+). Fire OS, like stock Android, still shows its own "install unknown apps"
