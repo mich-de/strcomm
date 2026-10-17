@@ -1,6 +1,10 @@
 package com.s4me.tv.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.tv.material3.Border
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Box
@@ -374,6 +378,99 @@ fun EpisodeCard(item: StreamItem, onClick: () -> Unit, modifier: Modifier = Modi
             modifier = Modifier.padding(top = 8.dp),
           )
         }
+      }
+    }
+  }
+}
+
+/** Row height of [ExpandingTitleCard]; a resting poster is 2:3 of it, the focused card 16:9. */
+val EXPANDING_CARD_HEIGHT = 132.dp
+
+/**
+ * The 2025 streaming-TV row card ("ricrea le UI dai video"): resting, a portrait poster; focused, the
+ * same card grows sideways into the 16:9 `cover` with the title `logo`, at the same height — so the
+ * row never changes height, only the focused title opens up and pushes its neighbours along. A white
+ * outline instead of a zoom marks focus. [onFocused] lets the row show this title's details under
+ * itself. A Top-10 [rank] stays a numeral on the poster.
+ */
+@Composable
+fun ExpandingTitleCard(
+  item: StreamItem,
+  onClick: () -> Unit,
+  onFocused: () -> Unit,
+  modifier: Modifier = Modifier,
+  rank: Int? = null,
+) {
+  var isFocused by remember { mutableStateOf(false) }
+  val width by animateDpAsState(
+    if (isFocused) EXPANDING_CARD_HEIGHT * 16f / 9f else EXPANDING_CARD_HEIGHT * 2f / 3f,
+    animationSpec = tween(220),
+    label = "expandingCardWidth",
+  )
+  val shape = RoundedCornerShape(8.dp)
+  val noLibraryScale = remember { CardDefaults.scale(scale = 1f, focusedScale = 1f, pressedScale = 1f) }
+  Card(
+    onClick = onClick,
+    shape = CardDefaults.shape(shape),
+    scale = noLibraryScale,
+    border = CardDefaults.border(focusedBorder = Border(border = BorderStroke(3.dp, Color.White), shape = shape)),
+    modifier =
+      modifier.width(width).height(EXPANDING_CARD_HEIGHT).onFocusChanged {
+        isFocused = it.isFocused
+        if (it.isFocused) onFocused()
+      },
+  ) {
+    Box(Modifier.fillMaxSize()) {
+      // Focused: the clean wide still — the site's `cover` has its own logo and "Aggiunto di recente"
+      // badge baked in, which doubled up with the logo laid over it.
+      val art = if (isFocused) item.backdrop ?: item.cover ?: item.thumbnail else item.thumbnail ?: item.cover ?: item.backdrop
+      if (art != null) {
+        AsyncImage(model = art, contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+      } else {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant))
+      }
+      if (isFocused) {
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.85f))))
+        if (item.logo != null) {
+          AsyncImage(
+            model = item.logo,
+            contentDescription = item.title,
+            contentScale = ContentScale.Fit,
+            alignment = Alignment.BottomStart,
+            modifier = Modifier.align(Alignment.BottomStart).padding(10.dp).fillMaxWidth(0.6f).heightIn(max = 40.dp),
+          )
+        } else {
+          Text(
+            text = item.seriesTitle ?: item.title,
+            style = MaterialTheme.typography.titleSmall,
+            color = Color.White,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.BottomStart).padding(10.dp),
+          )
+        }
+      } else if (item.thumbnail == null) {
+        // A poster-less title would otherwise rest as a cropped sliver of its wide still with no name.
+        Text(
+          text = item.seriesTitle ?: item.title,
+          style = MaterialTheme.typography.labelSmall,
+          color = Color.White,
+          maxLines = 3,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.align(Alignment.BottomStart).background(Color.Black.copy(alpha = 0.6f)).padding(6.dp),
+        )
+      }
+      rank?.let { r ->
+        Text(
+          text = "$r",
+          style =
+            MaterialTheme.typography.headlineMedium.copy(
+              fontWeight = FontWeight.Black,
+              shadow = Shadow(color = Color.Black, offset = Offset.Zero, blurRadius = 14f),
+            ),
+          color = Color.White,
+          modifier = Modifier.align(if (isFocused) Alignment.TopEnd else Alignment.TopStart).padding(horizontal = 8.dp, vertical = 2.dp),
+        )
       }
     }
   }

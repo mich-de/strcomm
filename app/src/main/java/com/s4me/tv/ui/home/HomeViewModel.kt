@@ -306,6 +306,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
               }
               .awaitAll()
               .flatten()
+              // The engine's first row is named after the source and opens with a "Sfoglia"
+              // catalogue card; the top bar's Sfoglia / Serie TV / Film tabs reach the catalogue now,
+              // so the row is just the site's trending titles. An unreachable site leaves it empty,
+              // and the Error state below says so instead of a lone blank card.
+              .map { section ->
+                val titles = section.items.filterNot { it.kind == ItemKind.LIST || it.kind == ItemKind.CATEGORY }
+                if (section.channelId.endsWith("-root")) section.copy(title = "Di tendenza ora", items = titles) else section.copy(items = titles)
+              }
+              .filter { it.items.isNotEmpty() }
           }
         // One after another, in row order, so the shared search budget goes to the top rows first.
         val chartsDeferred =

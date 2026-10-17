@@ -217,6 +217,8 @@ fun ClientApp() {
                   onOpenMyList = { backStack.add(MyList) },
                   onOpenBrowse = { extra -> catalogRoot?.let { backStack.add(Browse(it.copy(extra = extra))) } },
                   modifier = Modifier.fillMaxSize(),
+                  onOpenSearch = { openTab(2) },
+                  onOpenProfile = { openTab(3) },
                 )
               }
               entry<Search> { key ->

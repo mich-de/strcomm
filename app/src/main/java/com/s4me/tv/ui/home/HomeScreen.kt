@@ -1,5 +1,12 @@
 package com.s4me.tv.ui.home
 
+import androidx.compose.runtime.derivedStateOf
+import androidx.tv.material3.ButtonDefaults
+import androidx.compose.runtime.mutableStateOf
+import com.s4me.tv.engine.ItemKind
+import com.s4me.tv.ui.components.ExpandingTitleCard
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.animation.animateContentSize
 import android.app.Activity
 import android.os.SystemClock
 import android.widget.Toast
@@ -170,6 +177,7 @@ fun HomeScreen(onNavigate: (NavKey) -> Unit, modifier: Modifier = Modifier, view
     }
     HomeHeader(
       onBrowseClick = { viewModel.catalogRoot?.let { onNavigate(navKeyFor(it)) } },
+      onBrowseType = { extra -> viewModel.catalogRoot?.let { onNavigate(navKeyFor(it.copy(extra = extra))) } },
       onSearchClick = { onNavigate(Search()) },
       onSettingsClick = { onNavigate(Settings) },
       searchFocusRequester = searchFocusRequester,
@@ -184,6 +192,7 @@ fun HomeScreen(onNavigate: (NavKey) -> Unit, modifier: Modifier = Modifier, view
 @Composable
 private fun HomeHeader(
   onBrowseClick: () -> Unit,
+  onBrowseType: (String) -> Unit,
   onSearchClick: () -> Unit,
   onSettingsClick: () -> Unit,
   searchFocusRequester: FocusRequester,
@@ -215,28 +224,70 @@ private fun HomeHeader(
         false
       }
     }
-  Row(
-    modifier =
-      modifier
-        .fillMaxWidth()
-        .background(Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.75f), 1f to Color.Transparent))
-        .padding(horizontal = 48.dp, vertical = 20.dp),
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.SpaceBetween,
-  ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+  // Over the billboard the bar is a soft scrim; once the list has scrolled past it, solid black —
+  // otherwise the open row slid under the floating bar and the two read as one jumble.
+  val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0 } }
+  val barBackground =
+    if (scrolled) Brush.verticalGradient(listOf(Color.Black, Color.Black))
+    else Brush.verticalGradient(0f to Color.Black.copy(alpha = 0.75f), 1f to Color.Transparent)
+  // The 2025 streaming-TV top bar ("ricrea le UI dai video"): settings where the profile sits on the
+  // left, search and the sections as text tabs in the middle (Home marked as the current one, each
+  // turning into a white pill on focus), the app's mark on the right.
+  Box(modifier = modifier.fillMaxWidth().background(barBackground).padding(horizontal = 48.dp, vertical = 16.dp)) {
+    IconTab(R.drawable.ic_ms_settings, "Impostazioni", onSettingsClick, Modifier.align(Alignment.CenterStart).then(onDownGoToContent))
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+      modifier = Modifier.align(Alignment.Center),
+    ) {
+      IconTab(R.drawable.ic_ms_search, "Cerca", onSearchClick, Modifier.focusRequester(searchFocusRequester).then(onDownGoToContent))
+      TextTab("Home", selected = true, onClick = { scope.launch { listState.scrollToItem(0); runCatching { firstContentFocusRequester.requestFocus() } } }, modifier = onDownGoToContent)
+      TextTab("Serie TV", selected = false, onClick = { onBrowseType("type=tv") }, modifier = onDownGoToContent)
+      TextTab("Film", selected = false, onClick = { onBrowseType("type=movie") }, modifier = onDownGoToContent)
+      TextTab("Sfoglia", selected = false, onClick = onBrowseClick, modifier = onDownGoToContent)
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.align(Alignment.CenterEnd)) {
       Text(text = "Str", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Black), color = Color.White)
-      Text(
-        text = "Comm",
-        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Black),
-        color = MaterialTheme.colorScheme.primary,
-      )
+      Text(text = "Comm", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Black), color = MaterialTheme.colorScheme.primary)
     }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-      Button(onClick = onBrowseClick, modifier = onDownGoToContent) { SymbolLabel(R.drawable.ic_ms_explore, "Sfoglia") }
-      Button(onClick = onSearchClick, modifier = Modifier.focusRequester(searchFocusRequester).then(onDownGoToContent)) { SymbolLabel(R.drawable.ic_ms_search, "Cerca") }
-      Button(onClick = onSettingsClick, modifier = onDownGoToContent) { Symbol(R.drawable.ic_ms_settings, contentDescription = "Impostazioni") }
-    }
+  }
+}
+
+/** A top-bar section name: plain text at rest, a grey pill when it's the current one, white on focus. */
+@Composable
+private fun TextTab(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+  Button(
+    onClick = onClick,
+    colors =
+      ButtonDefaults.colors(
+        containerColor = if (selected) Color.White.copy(alpha = 0.18f) else Color.Transparent,
+        contentColor = Color.White,
+        focusedContainerColor = Color.White,
+        focusedContentColor = Color.Black,
+      ),
+    scale = ButtonDefaults.scale(focusedScale = 1f),
+    modifier = modifier,
+  ) {
+    Text(label, style = MaterialTheme.typography.titleSmall)
+  }
+}
+
+/** The top bar's icon-only entries (search, settings), styled like [TextTab]. */
+@Composable
+private fun IconTab(icon: Int, description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+  Button(
+    onClick = onClick,
+    colors =
+      ButtonDefaults.colors(
+        containerColor = Color.Transparent,
+        contentColor = Color.White,
+        focusedContainerColor = Color.White,
+        focusedContentColor = Color.Black,
+      ),
+    scale = ButtonDefaults.scale(focusedScale = 1f),
+    modifier = modifier,
+  ) {
+    Symbol(icon, contentDescription = description)
   }
 }
 
@@ -494,20 +545,64 @@ private fun GenreShortcutsRow(genres: List<GenreOption>, onGenreClick: (Int) -> 
 private fun HomeSectionRow(section: HomeSection, onNavigate: (NavKey) -> Unit, onPersonalItemRemove: (String, StreamItem) -> Unit) {
   val personalRow = section.channelId == CONTINUE_WATCHING_ID || section.channelId == WATCHLIST_ID
   val trendingRow = section.channelId == TRENDING_ID || section.channelId == JUSTWATCH_ID
-  Column {
+  // The title focused in this row, and whether focus is in the row at all: the details under the
+  // row show only while it is the one being browsed — the 2025 streaming-TV home keeps one row open.
+  var focusedItem by remember(section.channelId) { mutableStateOf<StreamItem?>(null) }
+  var rowHasFocus by remember { mutableStateOf(false) }
+  Column(Modifier.animateContentSize()) {
     Text(text = section.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 48.dp, bottom = 12.dp))
-    LazyRow(contentPadding = PaddingValues(horizontal = 48.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyRow(
+      contentPadding = PaddingValues(horizontal = 48.dp),
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+      modifier = Modifier.onFocusChanged { rowHasFocus = it.hasFocus },
+    ) {
       itemsIndexed(section.items, key = { _, it -> it.url }) { index, item ->
-        // Landscape cards, matching the source site's own Home rows. Trending rows keep the
-        // overlaid Top-10 numeral; personal rows keep a title line under the card.
-        CoverCard(
-          item = item,
-          onClick = { onNavigate(navKeyFor(item)) },
-          onLongClick = if (personalRow) ({ onPersonalItemRemove(section.channelId, item) }) else null,
-          rank = if (trendingRow) item.rank ?: (index + 1) else null,
-          showLabel = personalRow,
-        )
+        val rank = if (trendingRow) item.rank ?: (index + 1) else null
+        if (personalRow) {
+          // Personal rows keep the landscape card with its resume bar and the title line under it —
+          // which episode of which show matters more here than a poster.
+          CoverCard(
+            item = item,
+            onClick = { onNavigate(navKeyFor(item)) },
+            onLongClick = { onPersonalItemRemove(section.channelId, item) },
+            showLabel = true,
+          )
+        } else {
+          ExpandingTitleCard(item = item, onClick = { onNavigate(navKeyFor(item)) }, onFocused = { focusedItem = item }, rank = rank)
+        }
       }
+    }
+    val info = focusedItem
+    if (!personalRow && rowHasFocus && info != null) FocusedTitleInfo(info)
+  }
+}
+
+/** Under the open row: the focused title's genre · year · type · score, then its plot. */
+@Composable
+private fun FocusedTitleInfo(item: StreamItem) {
+  Column(Modifier.padding(start = 48.dp, end = 48.dp, top = 12.dp).fillMaxWidth(0.62f)) {
+    val meta =
+      listOfNotNull(
+          item.genres?.split(",")?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() },
+          item.year,
+          when (item.kind) {
+            ItemKind.SERIES, ItemKind.SEASON, ItemKind.EPISODE -> "Serie TV"
+            ItemKind.MOVIE -> "Film"
+            else -> null
+          },
+          // `quality` is a score on catalogue titles but "23:27 · CANALE 20" on the TV guide row — a star
+          // only in front of a bare number.
+          item.quality?.let { if (it.trim().matches(Regex("""\d+([.,]\d+)?"""))) "★ $it" else it },
+        )
+        .joinToString("  ·  ")
+    if (item.logo == null) {
+      Text(item.seriesTitle ?: item.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    if (meta.isNotEmpty()) {
+      Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+    }
+    item.plot?.takeIf { it.isNotBlank() }?.let {
+      Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
     }
   }
 }

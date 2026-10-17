@@ -5,6 +5,12 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import com.s4me.tv.engine.ProfileScope
+import com.s4me.tv.client.ui.profiles.ProfileAvatar
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -62,7 +68,6 @@ import com.s4me.tv.client.ui.components.HomeSkeleton
 import com.s4me.tv.client.ui.components.GreyButton
 import com.s4me.tv.client.ui.components.ItemActionsSheet
 import com.s4me.tv.client.ui.components.LocalTopInset
-import com.s4me.tv.client.ui.components.StrCommWordmark
 import com.s4me.tv.client.ui.components.PlayButton
 import com.s4me.tv.client.ui.components.PosterCard
 import com.s4me.tv.client.ui.components.RankedPosterCard
@@ -84,6 +89,8 @@ fun HomeScreen(
   onOpenMyList: () -> Unit,
   onOpenBrowse: (String) -> Unit,
   modifier: Modifier = Modifier,
+  onOpenSearch: () -> Unit = {},
+  onOpenProfile: () -> Unit = {},
   viewModel: HomeViewModel = viewModel(),
 ) {
   val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -103,31 +110,30 @@ fun HomeScreen(
       // The status bar turns solid as the billboard scrolls away.
       val scrimRamp = with(LocalDensity.current) { 200.dp.toPx() }
       val scrimProgress by remember { derivedStateOf { if (listState.firstVisibleItemIndex > 0) 1f else listState.firstVisibleItemScrollOffset / scrimRamp } }
-      Box(modifier = modifier) {
+      val wide = isWideScreen()
+      var currentHero by remember(s.heroes) { mutableStateOf(s.heroes.firstOrNull()) }
+      // The page is washed in the billboard's own colour, fading to black further down, and follows
+      // it as the billboard rotates — the reference streaming home ("ricrea le UI dai video"). Only
+      // on the dark theme: a dark wash under the light theme's dark text would be unreadable.
+      val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+      val tint = rememberArtworkTint(currentHero?.let { heroArt(it, wide) })
+      val pageBackground =
+        if (dark) Brush.verticalGradient(0f to tint, 0.5f to lerp(tint, Color.Black, 0.7f), 1f to Color.Black)
+        else Brush.verticalGradient(listOf(MaterialTheme.colorScheme.background, MaterialTheme.colorScheme.background))
+      Box(modifier = modifier.background(pageBackground)) {
         LazyColumn(
           state = listState,
           modifier = Modifier.fillMaxSize(),
-          contentPadding = PaddingValues(bottom = 24.dp),
-          verticalArrangement = Arrangement.spacedBy(20.dp),
+          contentPadding = PaddingValues(top = topInset, bottom = 24.dp),
+          verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-          // The type pills sit over the billboard's top, as on a streaming app's home; with no billboard
-          // (nothing loaded yet) they just sit at the top.
+          // "Per <profilo>" with search and the profile on the right, then the type pills, then the
+          // billboard as a card — the phone layout of the reference. A wide screen's top bar already
+          // carries the app's mark and the tabs.
+          if (!wide) item { HomeHeader(onOpenSearch = onOpenSearch, onOpenProfile = onOpenProfile) }
+          item { TypeFilterRow(docGenreId = docGenreId, onOpenBrowse = onOpenBrowse, modifier = Modifier.fillMaxWidth().padding(top = if (wide) 8.dp else 0.dp)) }
           if (s.heroes.isNotEmpty()) {
-            item {
-              Box {
-                HeroPager(heroes = s.heroes, topInset = topInset, onOpen = onOpen)
-                // The app's mark over the billboard's top-left, then the type pills — a streaming app's
-                // phone home. On a wide screen the top bar already carries the mark.
-                Column(modifier = Modifier.align(Alignment.TopStart).fillMaxWidth().padding(top = topInset + 8.dp)) {
-                  if (!isWideScreen()) {
-                    StrCommWordmark(strColor = Color.White, modifier = Modifier.padding(start = 16.dp, bottom = 6.dp))
-                  }
-                  TypeFilterRow(docGenreId = docGenreId, onOpenBrowse = onOpenBrowse, modifier = Modifier.fillMaxWidth())
-                }
-              }
-            }
-          } else {
-            item { TypeFilterRow(docGenreId = docGenreId, onOpenBrowse = onOpenBrowse, modifier = Modifier.padding(top = topInset + 8.dp)) }
+            item { HeroPager(heroes = s.heroes, wide = wide, onOpen = onOpen, onCurrent = { currentHero = it }) }
           }
           if (genres.isNotEmpty()) {
             item { GenreChips(genres = genres, onOpenGenre = { id -> onOpenBrowse("genre=$id") }) }
@@ -169,13 +175,36 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HeroPager(heroes: List<StreamItem>, topInset: Dp, onOpen: (StreamItem) -> Unit) {
+private fun HomeHeader(onOpenSearch: () -> Unit, onOpenProfile: () -> Unit) {
+  val context = LocalContext.current
+  val profile = remember { ProfileScope.current(context) }
+  Row(
+    verticalAlignment = Alignment.CenterVertically,
+    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 6.dp),
+  ) {
+    Text(
+      "Per ${profile.name}",
+      style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+      color = Color.White,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+      modifier = Modifier.weight(1f),
+    )
+    IconButton(onClick = onOpenSearch) { Symbol(R.drawable.ic_ms_search, contentDescription = "Cerca", tint = Color.White) }
+    ProfileAvatar(profile, size = 30.dp, modifier = Modifier.clickable(onClick = onOpenProfile))
+  }
+}
+
+/** The billboard's picture: the poster on a phone's portrait card, the wide still on a tablet's. */
+private fun heroArt(hero: StreamItem, wide: Boolean): String? =
+  if (wide) hero.backdrop ?: hero.thumbnail else hero.thumbnail ?: hero.backdrop
+
+@Composable
+private fun HeroPager(heroes: List<StreamItem>, wide: Boolean, onOpen: (StreamItem) -> Unit, onCurrent: (StreamItem) -> Unit) {
   val pagerState = rememberPagerState(pageCount = { heroes.size })
-  val heroHeight = if (isWideScreen()) 420.dp else 260.dp
-  // The billboard runs up under the status bar (and the type pills laid over it), so it is that much taller.
-  val fullHeight = heroHeight + topInset
   val context = LocalContext.current
   val watchlistStore = remember { WatchlistStore(context) }
+  LaunchedEffect(pagerState.currentPage) { heroes.getOrNull(pagerState.currentPage)?.let(onCurrent) }
   // Auto-rotates the billboard every 7 s, like a streaming app's Home picks its own hero instead of
   // asking the viewer to swipe (no dot row either — see below). Skips a cycle rather than fighting an
   // in-progress manual swipe; a manual swipe otherwise just moves the next 7 s window with it.
@@ -188,70 +217,83 @@ private fun HeroPager(heroes: List<StreamItem>, topInset: Dp, onOpen: (StreamIte
       }
     }
   }
-  HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth().height(fullHeight)) { page ->
+  // A card inset from the edges, not a full-bleed picture: portrait poster on a phone (its title is
+  // part of the artwork), a wide still with the title laid over it on a tablet.
+  HorizontalPager(
+    state = pagerState,
+    contentPadding = PaddingValues(horizontal = 16.dp),
+    pageSpacing = 12.dp,
+    modifier = Modifier.fillMaxWidth(),
+  ) { page ->
     val hero = heroes[page]
     var inList by remember(hero.url) { mutableStateOf(watchlistStore.contains(hero.url)) }
 
-    // A muted trailer preview once this page has been sitting still for a beat — long enough that
-    // a quick flick through the carousel never starts one just to tear it down a frame later.
+    // A muted trailer preview on the wide card once it has been sitting still for a beat — a 16:9
+    // trailer cropped into the phone's portrait card would show a sliver, so the phone keeps the poster.
     var showTrailer by remember(hero.url) { mutableStateOf(false) }
     // True only once YouTube itself reports the trailer playing — see TrailerPreview.
     var trailerPlaying by remember(hero.url) { mutableStateOf(false) }
-    LaunchedEffect(pagerState.currentPage, hero.trailerYoutubeId) {
+    LaunchedEffect(pagerState.currentPage, hero.trailerYoutubeId, wide) {
       showTrailer = false
       trailerPlaying = false
-      if (pagerState.currentPage == page && hero.trailerYoutubeId != null) {
+      if (wide && pagerState.currentPage == page && hero.trailerYoutubeId != null) {
         delay(1500)
         showTrailer = true
       }
     }
 
-    Box(modifier = Modifier.fillMaxWidth().height(fullHeight).clickable { onOpen(hero) }) {
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+      modifier =
+        Modifier.fillMaxWidth()
+          .aspectRatio(if (wide) 2.2f else 0.78f)
+          .clip(shape)
+          .border(1.dp, Color.White.copy(alpha = 0.14f), shape)
+          .background(Color.Black)
+          .clickable { onOpen(hero) }
+    ) {
       val trailerId = hero.trailerYoutubeId
       if (showTrailer && trailerId != null) {
-        TrailerView(youtubeId = trailerId, muted = true, onPlaying = { trailerPlaying = true }, modifier = Modifier.fillMaxWidth().height(fullHeight))
+        TrailerView(youtubeId = trailerId, muted = true, onPlaying = { trailerPlaying = true }, modifier = Modifier.matchParentSize())
       }
-      // The backdrop sits OVER the trailer and fades out only once YouTube says it is playing. Not
+      // The picture sits OVER the trailer and fades out only once YouTube says it is playing. Not
       // every trailer can play inside an app — embedding turned off by its owner, age-restricted,
       // region-locked ("alcuni non parte YouTube es american horror story") — and those now keep the
       // picture instead of uncovering a black box. The WebView still renders underneath, so the
       // page stays "visible" to YouTube and autoplay goes ahead.
-      val backdropAlpha by animateFloatAsState(if (trailerPlaying) 0f else 1f, animationSpec = tween(700), label = "heroBackdrop")
+      val pictureAlpha by animateFloatAsState(if (trailerPlaying) 0f else 1f, animationSpec = tween(700), label = "heroPicture")
       AsyncImage(
-        model = hero.backdrop ?: hero.thumbnail,
+        model = heroArt(hero, wide),
         contentDescription = hero.title,
         contentScale = ContentScale.Crop,
-        modifier =
-          Modifier.fillMaxWidth()
-            .height(fullHeight)
-            .graphicsLayer { alpha = backdropAlpha }
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.matchParentSize().graphicsLayer { alpha = pictureAlpha },
       )
-      Box(
+      Box(Modifier.matchParentSize().background(Brush.verticalGradient(0.45f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.9f))))
+      Column(
+        horizontalAlignment = if (wide) Alignment.Start else Alignment.CenterHorizontally,
         modifier =
-          Modifier.fillMaxWidth().height(fullHeight).background(
-            Brush.verticalGradient(0.35f to Color.Transparent, 1f to MaterialTheme.colorScheme.background)
+          Modifier.align(if (wide) Alignment.BottomStart else Alignment.BottomCenter)
+            .padding(16.dp)
+            .then(if (wide) Modifier.fillMaxWidth(0.5f) else Modifier.fillMaxWidth()),
+      ) {
+        if (wide) {
+          Text(
+            text = hero.title,
+            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+            color = Color.White,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
           )
-      )
-      // Under the status bar and the type pills, so they read on a bright picture.
-      Box(Modifier.fillMaxWidth().height(topInset + 76.dp).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent))))
-      Column(modifier = Modifier.align(Alignment.BottomStart).padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 34.dp)) {
-        Text(
-          text = hero.title,
-          style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-          color = Color.White,
-          maxLines = 2,
-          overflow = TextOverflow.Ellipsis,
-        )
-        val meta = listOfNotNull(hero.year, hero.quality, hero.runtime?.let { "$it min" }).joinToString("  ·  ")
-        if (meta.isNotBlank()) {
-          Text(meta, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.85f), modifier = Modifier.padding(top = 4.dp))
+          val meta = listOfNotNull(hero.year, hero.quality, hero.runtime?.let { "$it min" }).joinToString("  ·  ")
+          if (meta.isNotBlank()) {
+            Text(meta, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.85f), modifier = Modifier.padding(top = 4.dp))
+          }
         }
-        // "Crime • Thriller" — the genre tags under a billboard's title (once the hero is enriched).
-        hero.genres?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.take(3)?.joinToString("  •  ")?.let {
-          Text(it, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.7f), modifier = Modifier.padding(top = 2.dp))
+        // "Crime • Thriller" — the genre tags under a billboard (once the hero is enriched).
+        hero.genres?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.take(4)?.joinToString("  •  ")?.let {
+          Text(it, style = MaterialTheme.typography.labelLarge, color = Color.White.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 14.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
           PlayButton("Apri", R.drawable.ic_ms_play_arrow_fill, onClick = { onOpen(hero) }, modifier = Modifier.weight(1f))
           GreyButton(
             if (inList) "Nella lista" else "La mia lista",
