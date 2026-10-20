@@ -1,12 +1,15 @@
 package com.s4me.tv.engine
 
 import java.io.IOException
+import java.net.InetAddress
+import java.net.UnknownHostException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
 import okhttp3.CookieJar
+import okhttp3.Dns
 import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -16,6 +19,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import org.json.JSONObject
 
 const val DESKTOP_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
@@ -59,12 +63,73 @@ private class DefaultHeadersInterceptor : Interceptor {
   }
 }
 
+object ResilientDns : Dns {
+  private val dohClient by lazy {
+    OkHttpClient.Builder()
+      .dns(Dns.SYSTEM)
+      .connectTimeout(5, TimeUnit.SECONDS)
+      .readTimeout(5, TimeUnit.SECONDS)
+      .build()
+  }
+
+  private val cache = ConcurrentHashMap<String, Pair<List<InetAddress>, Long>>()
+
+  override fun lookup(hostname: String): List<InetAddress> {
+    val cached = cache[hostname]
+    if (cached != null && System.currentTimeMillis() < cached.second) {
+      return cached.first
+    }
+
+    try {
+      val systemAddrs = Dns.SYSTEM.lookup(hostname)
+      if (systemAddrs.isNotEmpty()) {
+        cache[hostname] = systemAddrs to (System.currentTimeMillis() + 600_000L)
+        return systemAddrs
+      }
+    } catch (_: Exception) {}
+
+    val dohAddrs = queryDoh("https://1.1.1.1/dns-query?name=$hostname&type=A")
+      ?: queryDoh("https://8.8.8.8/resolve?name=$hostname&type=A")
+
+    if (dohAddrs != null && dohAddrs.isNotEmpty()) {
+      cache[hostname] = dohAddrs to (System.currentTimeMillis() + 600_000L)
+      return dohAddrs
+    }
+
+    throw UnknownHostException("ResilientDns: unable to resolve $hostname")
+  }
+
+  private fun queryDoh(url: String): List<InetAddress>? = runCatching {
+    val req = Request.Builder()
+      .url(url)
+      .header("Accept", "application/dns-json")
+      .build()
+    dohClient.newCall(req).execute().use { resp ->
+      if (!resp.isSuccessful) return null
+      val json = JSONObject(resp.body.string())
+      val answers = json.optJSONArray("Answer") ?: return null
+      val out = mutableListOf<InetAddress>()
+      for (i in 0 until answers.length()) {
+        val ans = answers.optJSONObject(i) ?: continue
+        if (ans.optInt("type") == 1) {
+          val ip = ans.optString("data")
+          if (ip.isNotBlank()) {
+            runCatching { InetAddress.getByName(ip) }.getOrNull()?.let { out.add(it) }
+          }
+        }
+      }
+      out.ifEmpty { null }
+    }
+  }.getOrNull()
+}
+
 /** Thin OkHttp wrapper standing in for the addon's core/httptools.py. */
 object Net {
   private val sharedCookieJar = SharedCookieJar()
 
   val client: OkHttpClient =
     OkHttpClient.Builder()
+      .dns(ResilientDns)
       .cookieJar(sharedCookieJar)
       .addInterceptor(DefaultHeadersInterceptor())
       .connectTimeout(15, TimeUnit.SECONDS)

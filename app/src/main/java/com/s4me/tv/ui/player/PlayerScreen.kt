@@ -871,7 +871,7 @@ private fun WebViewPlayer(item: StreamItem, originItem: StreamItem?, modifier: M
             }
           }
 
-          loadUrl(pageUrl, mapOf("Referer" to (item.referer ?: "https://streamingcommunityz.taxi/")))
+          loadUrl(pageUrl, mapOf("Referer" to (item.referer ?: "https://streamingcommunityz.build/")))
           requestFocus()
         }
       },

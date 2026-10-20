@@ -55,17 +55,23 @@ class StreamingCommunityChannel : Channel {
   override val displayName = "StreamingCommunity"
   override val category = ChannelCategory.MIXED
 
-  @Volatile private var host = "https://streamingcommunityz.taxi"
-  @Volatile private var cdn = "https://cdn.streamingcommunityz.taxi/images/"
+  @Volatile private var host = "https://streamingcommunityz.build"
+  @Volatile private var cdn = "https://cdn.streamingcommunityz.build/images/"
 
   /**
    * Cold-start seeds for [host], newest domain first. The site rotates its TLD, so these are only
    * guesses: [withColdStartFallback] tries them in order on the first request of the session and
    * adopts whichever one answers, after which [syncConfigFrom] pins the site's own reported domain
-   * from every response. `.taxi` is the live domain, `.tax` the prior one (still 301-ing here for
-   * now, but listed explicitly so it keeps working the day that redirect stops).
+   * from every response. `.build` is the live domain (since 2026-10-19), `.shiksha` and `.rip` the
+   * prior ones.
    */
-  private val hostSeeds = listOf("https://streamingcommunityz.taxi", "https://streamingcommunityz.tax")
+  private val hostSeeds =
+    listOf(
+      "https://streamingcommunityz.build",
+      "https://streamingcommunityz.shiksha",
+      "https://streamingcommunityz.rip",
+      "https://streamingcommunityz.taxi",
+    )
 
   /** Flips true the first time any fetch succeeds — from then on [withColdStartFallback] is a
    *  straight passthrough and the seed-walk never runs again this session. */
