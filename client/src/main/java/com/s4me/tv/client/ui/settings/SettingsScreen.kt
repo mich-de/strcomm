@@ -1,0 +1,392 @@
+package com.s4me.tv.client.ui.settings
+
+import android.Manifest
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.s4me.tv.client.R
+import com.s4me.tv.client.notifications.AvailabilityWorker
+import com.s4me.tv.client.notifications.NewReleaseWorker
+import com.s4me.tv.client.sync.ProgressSyncPreference
+import com.s4me.tv.client.sync.ProgressSyncWorker
+import com.s4me.tv.client.theme.ThemeMode
+import com.s4me.tv.client.theme.ThemePreference
+import com.s4me.tv.client.ui.components.SymbolLabel
+import com.s4me.tv.engine.AvailabilityReminderStore
+import com.s4me.tv.engine.BackupManager
+import com.s4me.tv.engine.CacheUtil
+import com.s4me.tv.engine.NewReleaseStore
+import com.s4me.tv.engine.AppUpdate
+import com.s4me.tv.engine.PERSONAL_USE_NOTICE
+import com.s4me.tv.engine.ProfileScope
+import com.s4me.tv.engine.SearchHistoryStore
+import com.s4me.tv.engine.Tmdb
+import com.s4me.tv.engine.TmdbApiKeyStore
+import com.s4me.tv.engine.UpdateChecker
+import com.s4me.tv.engine.WatchProgressStore
+import com.s4me.tv.engine.WatchStatsStore
+import com.s4me.tv.engine.WatchlistStore
+import com.s4me.tv.engine.appVersionName
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+@Composable
+fun SettingsScreen(
+  onOpenTvGuide: () -> Unit = {},
+  onOpenCustomLists: () -> Unit = {},
+  onOpenDownloads: () -> Unit = {},
+  onOpenProfiles: () -> Unit = {},
+  modifier: Modifier = Modifier,
+) {
+  val context = LocalContext.current
+  val progress = remember { WatchProgressStore(context) }
+  val watchlist = remember { WatchlistStore(context) }
+  val history = remember { SearchHistoryStore(context.applicationContext as android.app.Application) }
+  val themeMode by ThemePreference.mode.collectAsStateWithLifecycle()
+  val scope = rememberCoroutineScope()
+
+  var cacheBytes by remember { mutableLongStateOf(0L) }
+  var clearingCache by remember { mutableStateOf(false) }
+  LaunchedEffect(Unit) { cacheBytes = withContext(Dispatchers.IO) { CacheUtil.sizeBytes(context) } }
+
+  val tmdbKeyStore = remember { TmdbApiKeyStore(context) }
+  var tmdbKeyInput by remember { mutableStateOf(tmdbKeyStore.load().orEmpty()) }
+  var tmdbUsingApi by remember { mutableStateOf(Tmdb.usingApi) }
+
+  val statsStore = remember { WatchStatsStore(context) }
+  val stats = remember { statsStore.summary() }
+
+  val newReleaseStore = remember { NewReleaseStore(context) }
+  var notificationsEnabled by remember { mutableStateOf(newReleaseStore.enabled) }
+  val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+
+  var syncEnabled by remember { mutableStateOf(ProgressSyncPreference.isEnabled(context)) }
+
+  val application = context.applicationContext as android.app.Application
+  val exportLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+      if (uri == null) return@rememberLauncherForActivityResult
+      scope.launch(Dispatchers.IO) {
+        runCatching {
+          context.contentResolver.openOutputStream(uri)?.use { it.write(BackupManager.export(application).toByteArray()) }
+        }
+        withContext(Dispatchers.Main) { Toast.makeText(context, "Backup salvato", Toast.LENGTH_SHORT).show() }
+      }
+    }
+  val importLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+      if (uri == null) return@rememberLauncherForActivityResult
+      scope.launch(Dispatchers.IO) {
+        val text = runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) } }.getOrNull()
+        val ok = text != null && BackupManager.import(application, text)
+        withContext(Dispatchers.Main) {
+          Toast.makeText(context, if (ok) "Dati ripristinati — riapri l'app per vederli" else "File non valido", Toast.LENGTH_LONG).show()
+        }
+      }
+    }
+
+  // "Hai installato?" / "possiamo prevedere che se l'app trova un update su github lo fa notare
+  // e lo installa?" — UpdateChecker reads the latest GitHub release: a higher version, or the same
+  // version's APK replaced in place. UPDATE_ASSET_PREFIX must match this app's asset name there.
+  var checkingUpdate by remember { mutableStateOf(false) }
+  var availableUpdate by remember { mutableStateOf<AppUpdate?>(null) }
+  var downloadProgress by remember { mutableFloatStateOf(-1f) }
+  var downloading by remember { mutableStateOf(false) }
+
+  Column(
+    modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+    verticalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
+    Text("Impostazioni", style = MaterialTheme.typography.headlineSmall)
+    val version = remember { appVersionName(context) }
+    Text("StrComm $version · $PERSONAL_USE_NOTICE", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    FilledTonalButton(
+      enabled = !checkingUpdate,
+      onClick = {
+        checkingUpdate = true
+        scope.launch {
+          val update = withContext(Dispatchers.IO) { UpdateChecker.check(context, UPDATE_ASSET_PREFIX) }
+          checkingUpdate = false
+          if (update != null) availableUpdate = update
+          else Toast.makeText(context, "Hai già la build più recente", Toast.LENGTH_SHORT).show()
+        }
+      },
+    ) {
+      SymbolLabel(R.drawable.ic_ms_download, if (checkingUpdate) "Verifica in corso…" else "Verifica aggiornamenti")
+    }
+    FilledTonalButton(onClick = onOpenProfiles) {
+      SymbolLabel(R.drawable.ic_ms_account_circle, "Profilo: ${remember { ProfileScope.current(context).name }} · Cambia")
+    }
+    FilledTonalButton(onClick = onOpenTvGuide) { SymbolLabel(R.drawable.ic_ms_live_tv, "Guida TV completa") }
+    FilledTonalButton(onClick = onOpenCustomLists) { SymbolLabel(R.drawable.ic_ms_list_alt, "Le mie liste personalizzate") }
+    FilledTonalButton(onClick = onOpenDownloads) { SymbolLabel(R.drawable.ic_ms_download, "I miei download") }
+
+    Text("Dati personali, salvati solo su questo dispositivo.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+    FilledTonalButton(onClick = { progress.clearAll() }) { SymbolLabel(R.drawable.ic_ms_delete, "Svuota «Continua a guardare»") }
+    FilledTonalButton(onClick = { watchlist.clearAll() }) { SymbolLabel(R.drawable.ic_ms_delete, "Svuota «La mia lista»") }
+    FilledTonalButton(onClick = { history.clear() }) { SymbolLabel(R.drawable.ic_ms_delete, "Cancella cronologia ricerche") }
+    FilledTonalButton(
+      onClick = {
+        clearingCache = true
+        scope.launch(Dispatchers.IO) {
+          CacheUtil.clear(context)
+          val size = CacheUtil.sizeBytes(context)
+          withContext(Dispatchers.Main) {
+            cacheBytes = size
+            clearingCache = false
+          }
+        }
+      },
+      enabled = !clearingCache,
+    ) {
+      if (clearingCache) Text("Pulizia in corso…") else SymbolLabel(R.drawable.ic_ms_cleaning_services, "Pulisci cache (${CacheUtil.formatSize(cacheBytes)})")
+    }
+
+    Text("Tema", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      ThemeChip("Sistema", ThemeMode.SYSTEM, themeMode, context)
+      ThemeChip("Chiaro", ThemeMode.LIGHT, themeMode, context)
+      ThemeChip("Scuro", ThemeMode.DARK, themeMode, context)
+    }
+
+    Text("Chiave API TMDB (opzionale)", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+    Text(
+      if (tmdbUsingApi) "Attiva: voti, conteggio voti e trailer ufficiali da TMDB."
+      else "Non impostata: voti e trama vengono comunque letti dalla pagina pubblica di TMDB, senza chiave.",
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    OutlinedTextField(
+      value = tmdbKeyInput,
+      onValueChange = { tmdbKeyInput = it },
+      label = { Text("Chiave API TMDB") },
+      singleLine = true,
+      modifier = Modifier.fillMaxWidth(),
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      FilledTonalButton(
+        onClick = {
+          tmdbKeyStore.save(tmdbKeyInput)
+          Tmdb.setApiKeyOverride(tmdbKeyInput)
+          tmdbUsingApi = Tmdb.usingApi
+        }
+      ) {
+        Text("Salva")
+      }
+      FilledTonalButton(
+        onClick = {
+          tmdbKeyInput = ""
+          tmdbKeyStore.save(null)
+          Tmdb.setApiKeyOverride(null)
+          tmdbUsingApi = Tmdb.usingApi
+        }
+      ) {
+        Text("Rimuovi")
+      }
+    }
+
+    Text("Statistiche di visione", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+    if (stats.titlesCompleted == 0) {
+      Text(
+        "Nessun titolo completato finora.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+    } else {
+      Text(
+        "%d titoli completati (%d film, %d episodi) · circa %.1f ore di contenuti".format(
+          stats.titlesCompleted, stats.moviesCompleted, stats.episodesCompleted, stats.totalMs / 3_600_000.0,
+        ),
+        style = MaterialTheme.typography.bodyMedium,
+      )
+    }
+
+    Text("Notifiche nuove uscite", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+      Switch(
+        checked = notificationsEnabled,
+        onCheckedChange = { checked ->
+          notificationsEnabled = checked
+          newReleaseStore.enabled = checked
+          if (checked) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+              notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            NewReleaseWorker.schedule(context)
+          } else {
+            NewReleaseWorker.cancel(context)
+          }
+        },
+      )
+      Text(
+        "Avvisa quando una serie nella tua lista ha una nuova stagione (controllo ogni 12 ore circa).",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+    }
+
+    val reminders = remember { AvailabilityReminderStore(context) }
+    var reminderCount by remember { mutableIntStateOf(reminders.all().size) }
+    if (reminderCount > 0) {
+      Text("Promemoria di disponibilità", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+      Text(
+        "$reminderCount ${if (reminderCount == 1) "ricerca senza risultati" else "ricerche senza risultati"}: ti avviso quando compaiono nel catalogo (controllo ogni 12 ore circa).",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      FilledTonalButton(
+        onClick = {
+          reminders.clear()
+          reminderCount = 0
+          AvailabilityWorker.cancel(context)
+        }
+      ) {
+        SymbolLabel(R.drawable.ic_ms_delete, "Annulla i promemoria")
+      }
+    }
+
+    Text("Sincronizza con la TV", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+      Switch(
+        checked = syncEnabled,
+        onCheckedChange = { checked ->
+          syncEnabled = checked
+          ProgressSyncPreference.setEnabled(context, checked)
+          if (checked) {
+            ProgressSyncWorker.schedule(context)
+            ProgressSyncWorker.syncNow(context)
+          } else {
+            ProgressSyncWorker.cancel(context)
+          }
+        },
+      )
+      Text(
+        "Tieni allineato «Continua a guardare» con la StrComm sulla TV, sulla stessa rete Wi-Fi.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+    }
+
+    Text("Backup dati", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+    Text(
+      "Esporta «Continua a guardare», «La mia lista», cronologia ricerche e statistiche in un file, o ripristinali da un backup precedente.",
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      FilledTonalButton(onClick = { exportLauncher.launch("strcomm-backup.json") }) { SymbolLabel(R.drawable.ic_ms_upload, "Esporta") }
+      FilledTonalButton(onClick = { importLauncher.launch(arrayOf("application/json")) }) { SymbolLabel(R.drawable.ic_ms_download, "Ripristina") }
+    }
+
+    Text("StrComm — client touch. Streaming da un unico sito di terze parti.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp))
+  }
+
+  availableUpdate?.let { update ->
+    if (downloading) {
+      AlertDialog(
+        onDismissRequest = {},
+        title = { Text("Download in corso") },
+        text = {
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (downloadProgress >= 0f) {
+              androidx.compose.material3.LinearProgressIndicator(progress = { downloadProgress }, modifier = Modifier.fillMaxWidth())
+              Text("${(downloadProgress * 100).toInt()}%", style = MaterialTheme.typography.bodySmall)
+            } else {
+              CircularProgressIndicator()
+            }
+          }
+        },
+        confirmButton = {},
+      )
+    } else {
+      AlertDialog(
+        onDismissRequest = { UpdateChecker.markSeen(context, update); availableUpdate = null },
+        title = { Text("Aggiornamento disponibile") },
+        text = { Text("È stata pubblicata una build più recente di StrComm (${CacheUtil.formatSize(update.sizeBytes)}). Scaricarla e installarla ora?") },
+        confirmButton = {
+          FilledTonalButton(
+            onClick = {
+              downloading = true
+              downloadProgress = -1f
+              scope.launch {
+                val file =
+                  runCatching {
+                    withContext(Dispatchers.IO) { UpdateChecker.download(context, update) { p -> withContext(Dispatchers.Main) { downloadProgress = p } } }
+                  }.getOrNull()
+                downloading = false
+                UpdateChecker.markSeen(context, update)
+                availableUpdate = null
+                if (file != null) installApk(context, file) else Toast.makeText(context, "Download non riuscito", Toast.LENGTH_SHORT).show()
+              }
+            }
+          ) {
+            Text("Scarica e installa")
+          }
+        },
+        dismissButton = {
+          FilledTonalButton(onClick = { UpdateChecker.markSeen(context, update); availableUpdate = null }) { Text("Più tardi") }
+        },
+      )
+    }
+  }
+}
+
+/** This app's asset name on a GitHub release, up to the version ("…-v1.0.1.apk") — must match what
+ *  `gh release upload` names it, or UpdateChecker never finds it. */
+private const val UPDATE_ASSET_PREFIX = "StrComm-Mobile-Tablet-"
+
+/** Fires the system's own APK-install flow via a content:// URI (FileProvider — a bare file:// path
+ *  is blocked on API 24+). Android still shows its own "install unknown apps" confirmation if this
+ *  app hasn't been granted it yet; that's the OS's own gate, not something to route around. */
+private fun installApk(context: android.content.Context, file: java.io.File) {
+  val uri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+  val intent =
+    Intent(Intent.ACTION_VIEW).apply {
+      setDataAndType(uri, "application/vnd.android.package-archive")
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+  runCatching { context.startActivity(intent) }
+    .onFailure { Toast.makeText(context, "Nessuna app per installare il pacchetto", Toast.LENGTH_SHORT).show() }
+}
+
+@Composable
+private fun ThemeChip(label: String, mode: ThemeMode, current: ThemeMode, context: android.content.Context) {
+  FilterChip(selected = mode == current, onClick = { ThemePreference.set(context, mode) }, label = { Text(label) }, shape = RoundedCornerShape(50))
+}

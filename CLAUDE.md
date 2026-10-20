@@ -1,0 +1,516 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project
+
+**StrComm** — a personal-use client for a single third-party catalogue site. Three apps, one
+content engine. Five Gradle modules:
+
+| Module | Type | Package | What |
+|---|---|---|---|
+| `:shared` | kotlin-jvm | `com.s4me.tv.*` | wire types only — `StreamItem` / `ItemKind` / `HomeSection`, and the remote-control protocol (`Handshake`, `PlaybackStatus`, `PlaybackCommand`) |
+| `:engine` | android-library | `com.s4me.tv.engine` | **the content engine** — `Channel` sources, HTTP/scrape helpers, IMDb/TMDB enrichment, on-device stores. No Compose, no media3. |
+| `:app` | android-application | `com.s4me.tv` | the Android **TV** app (leanback, D-pad) + the local control server for the phone remote — also the **Fire TV Stick** build, same APK |
+| `:mobile` | android-application | `com.s4me.tv.remote` | **StrComm Remote** — the phone **second-screen remote** (discover TV, search, cast, transport) |
+| `:client` | android-application | `com.s4me.tv.client` | **the touch streaming app** for phones + tablets, portrait + landscape — a full client with its own Netflix-style player |
+
+Dependency graph:
+
+```
+:shared ── :engine ──┬── :app
+   └─────────────────┼── :client
+                     └── :mobile   (:mobile depends on :shared only — no :engine)
+```
+
+`:app` and `:client` are **independent apps that share `:engine`** — they do not depend on each
+other, and each has its own `navKeyFor()`, its own `NavKey` types, its own player. Changing shared
+behaviour means changing `:engine`; changing one app's UI never touches the other.
+
+> `:app`'s server code lives at `app/src/main/java/com/s4me/tv/remote/` — same package name
+> (`com.s4me.tv.remote`) as the whole `:mobile` module. They are unrelated; don't conflate them.
+
+The source site ships its browse data as **JSON**, so no HTML scraping is needed for browsing —
+only rating/metadata enrichment scrapes (IMDb, TMDB). See `README.md` for the user-facing overview.
+
+## Build & check
+
+```bash
+# fast compile check after edits (do this before assembling)
+./gradlew :shared:compileKotlin :engine:compileDebugKotlin \
+          :app:compileDebugKotlin :client:compileDebugKotlin :mobile:compileDebugKotlin
+
+# debug APKs
+./gradlew :app:assembleDebug      # -> app/build/outputs/apk/debug/app-debug.apk
+./gradlew :client:assembleDebug   # -> client/build/outputs/apk/debug/client-debug.apk
+./gradlew :mobile:assembleDebug   # -> mobile/build/outputs/apk/debug/mobile-debug.apk
+
+# Android lint (the only real static check configured)
+./gradlew :app:lintDebug :client:lintDebug :mobile:lintDebug
+
+# release APKs — signed iff keystore.properties exists at the repo root, else unsigned
+./gradlew :app:assembleRelease :client:assembleRelease :mobile:assembleRelease
+```
+
+- **JDK 17** toolchain (`jvmToolchain(17)`), Gradle 9.1, AGP 9.0.x, Kotlin 2.3.x, compileSdk 36.
+  minSdk is **23** for `:app`/`:engine` (floored by `androidx.tv:tv-material`'s own minSdk 23 —
+  this is what makes `:app` installable on Fire TV Stick; Fire OS 6, the oldest Fire OS still
+  installable, is API 25) and **26** for `:client`/`:mobile` (phones/tablets have no such
+  constraint). AGP 9 auto-applies the Kotlin Android plugin — modules only declare
+  `android.application` / `android.library` + `compose.compiler` + `kotlin.serialization`. All
+  versions in `gradle/libs.versions.toml`.
+- `:client`'s **release build runs R8** (minify + resource shrinking, no extra keep rules needed; APK 17 MB → 3 MB, one 4.8 MB dex). It takes 2–6 min and is memory-hungry: on this 15 GB box with an IDE open it was OOM-killed (exit 137) until stray Gradle daemons were stopped (`./gradlew --stop`). `:app`/`:mobile` are not minified yet.
+- **No tests.** `app/src/test` + `app/src/androidTest` are empty; there is no `:client` / `:engine`
+  test source set. `./gradlew test` is a no-op; `./gradlew check` effectively just runs lint.
+- No ktfmt/spotless/detekt task — the code follows ktfmt *style* by convention only (see below).
+- `buildConfig = true` is set on **`:engine` only**, to expose `BuildConfig.TMDB_API_KEY` (read
+  from `tmdb.apiKey` in `local.properties` or the `TMDB_API_KEY` env var; blank = keyless scrape
+  path, which is the normal state — `local.properties` here has only `sdk.dir`). `:app` and
+  `:client` have `buildConfig = false`; if one needs the key, route it through an `:engine` API.
+- Release signing: gitignored `keystore.properties` at the repo root points at
+  `keystore/strcomm-release.jks` (also gitignored, present locally). All three apps reuse it. A
+  clone without it still builds — `assembleRelease` just comes out unsigned (AGP names those
+  `*-release-unsigned.apk`).
+- `*.apk`, `*.jks`, `*.keystore`, `keystore.properties`, `local.properties` are gitignored and
+  must never be committed. APKs staged at the repo root are for manual GitHub Release upload only.
+- **Versions**: all three apps share one versionName/versionCode (now `1.0.1` / `2`, set in each module's `build.gradle.kts`), and each version is a GitHub release `v<version>` with assets `StrComm-{TVBox-FireStick,Mobile-Tablet,Remote}-v<version>.apk`. Until 2026-10-17 versions never moved (one `v1.0.0` release whose APKs were replaced in place; on 2026-09-29 the history was squashed into a single "StrComm 1.0.0" commit); then the user asked for `1.0.1` ("salva questa versione 1.0.1 su github"). A release's APKs can still be replaced in place without a new tag. The in-app updater (`engine/UpdateChecker.kt`, Settings → "Verifica aggiornamenti" in `:app`/`:client`) reads `releases/latest` and finds the app's asset by name prefix: a higher tag than the installed versionName is an update; at the same version the asset's `updated_at` against a per-version baseline decides. Builds before 1.0.1 only ever look at release `v1.0.0` for the exact `…-v1.0.0.apk` names, so `v1.0.0`'s assets carry the 1.0.1 build too — that's how those installs reach 1.0.1. Settings (and the Remote's first screen) show the installed versionName via `appVersionName()` (`engine/AppInfo.kt`) next to "app a uso esclusivamente personale".
+- **Installing an update in-app**: `UpdateChecker.download()` writes the APK to `cacheDir/updates/`, exposed through `androidx.core.content.FileProvider` (`${applicationId}.fileprovider`, `res/xml/file_paths.xml` → `<cache-path name="updates" path="updates/"/>`) and handed to the system installer with an `ACTION_VIEW` intent (`application/vnd.android.package-archive`); the manifests carry `REQUEST_INSTALL_PACKAGES`. Android then shows its own "install unknown apps" consent the first time — the OS's gate, not something to route around. Verified on an emulator end to end: no false "update" on a fresh install, detection after a newer upload, download with progress, installer prompt. `:mobile` (the Remote) has no updater.
+- **Uploading release assets**: `gh release upload <tag> path#label` only sets a display *label* — the asset is still named after the local file (it once created stray `app-release.apk` / `client-release.apk` assets). Copy the APKs to their final names first (`StrComm-…-v<version>.apk`) and upload those with `--clobber`.
+
+## On-device testing
+
+Devices that have been on ADB (ask the user which are on; wireless ones need the current port):
+
+- **TV box** — Strong 4K Hybrid STB, `192.168.188.128:5555`. SmartTube installed, NO official
+  YouTube app; also a DVB receiver, and other people in the house use it.
+- **Galaxy S25 Edge** (`SM-S937B`, `192.168.188.69`) — the user's own phone, **and where they read
+  this conversation** in the Claude app: install freely, but never launch, tap or screenshot without
+  checking `dumpsys window | grep mCurrentFocus` in the same adb call (a stray tap once landed in the
+  Claude app). Its port changes: `avahi-browse -rtp _adb-tls-connect._tcp` (the distro `adb` has no
+  `adb mdns`), then `adb connect`.
+- **Xiaomi Pad 5** (`21051182C`, "nabu", serial `a32af8de`) — USB, takes release APKs. Its logcat
+  shows recurring `com.qti.phone` FATALs: a Qualcomm system service, not StrComm.
+- Older: Galaxy Tab A9+ (`SM-X216B`, `192.168.188.23`), Galaxy S24 (`SM-S921B`).
+
+```bash
+adb connect <box-ip>:5555
+adb -s <serial> install -r app/build/outputs/apk/release/app-release.apk        # TV app
+adb -s <serial> install -r client/build/outputs/apk/release/client-release.apk  # touch app
+adb -s <serial> shell am start -n com.s4me.tv/.MainActivity   # NOT `monkey -p … 1`, see below
+adb -s <serial> exec-out screencap -p > shot.png
+```
+
+**Emulator** when no device is free (or the user is using theirs): an AVD must live on real disk —
+`ANDROID_AVD_HOME=~/.cache/strcomm-avd` (`/tmp` is tmpfs, too small) — from
+`system-images;android-36;google_apis_playstore;x86_64` via
+`~/Android/Sdk/cmdline-tools/latest/bin/avdmanager create avd -n strcomm_phone -d pixel_7 …`, booted
+`-no-window -no-audio -no-boot-anim -no-snapshot -no-metrics -gpu swiftshader_indirect` (add
+`-dns-server 8.8.8.8` when the host's DNS is flaky), ready when `sys.boot_completed` is 1. The TV
+app runs on it too (landscape, D-pad via `input keyevent KEYCODE_DPAD_*`). Tap coordinates: a
+screenshot read back is scaled (1080×2400 shown at 900×2000) — multiply by the stated factor, and
+confirm the screen with a screenshot before tapping; guessed coordinates kept landing on posters
+instead of the tab bar. Delete the AVD afterwards.
+
+The box is **slow** to load Home (network fan-out) and scripted D-pad nav into it is flaky — wait
+15 s+ before screenshotting, or ask the user to drive. Wireless ADB drops often (`adb connect`
+again); devices sleep and screenshots come back black on the lock screen. Installing a *release*
+build over a *debug* one fails on signature mismatch — but a device on Android 13+ can be moved to
+the release key **without uninstalling** (data kept) by signing the release APK with a key-rotation
+lineage: `apksigner rotate --out L --old-signer --ks ~/.android/debug.keystore … --new-signer --ks
+keystore/strcomm-release.jks …`, then `apksigner sign --ks <debug> … --next-signer --ks <release> …
+--lineage L app-release.apk` (v3.1 carries the release cert for API 33+; older APIs still see the
+debug one, so never upload that APK). Done on the Strong box 2026-09-28 and the Galaxy Tab A9+
+2026-09-29: both run the release signature and take plain release APKs. Wireless-debug pairing needs
+the 6-digit code shown next to the *pairing* port (`adb pair ip:port code`); the *connect* port is a
+different one — read it from `avahi-browse`. Launch with `am start`, never `monkey -p … 1`: monkey
+injects one random key right after launching, and a debug cold start on the box took ~8 s to its
+first frame, so that key waited >5 s for a focused window → ANR ("Input dispatching timed out
+(Application does not have a focused window)") and the process was killed.
+
+**Netflix as a visual reference**: Netflix 9.87.1's APK is at the repo root (gitignored, `*.apk`)
+and was read for behaviour (see "Search study"), but it can't be *run* for screenshots — on an
+emulator it kills itself (`SIG: 9` from its own process) ~1.5 s after launch, right after reading
+`/proc/filesystems` + `/proc/modules` and probing Widevine; getting past that would mean defeating
+its DRM / anti-tamper, which is off the table. Visual references come from the user instead —
+screenshots, or YouTube videos fetched with `uvx yt-dlp` and sampled into contact sheets with
+`ffmpeg -vf "fps=1/N,scale=480:-1,tile=4x3"`.
+
+**Probe the TV app's data without its UI** through its own control server (same LAN):
+
+```bash
+curl "http://<box-ip>:57813/search?q=..."      # -> StreamItem[] JSON
+```
+
+## Architecture
+
+### The content engine — `:engine`
+
+`Channel` (`engine/Channel.kt`) is a port of the Kodi-addon `channels/NAME.py` contract:
+`home()`, `catalogRoot()`, `list(item, page)`, `genres()`, `detail(item, withRatings)`,
+`seasonOverview(item)`, `findVideos()`, `resolveEmbedUrl()`, `search()`.
+
+**`ItemKind` drives navigation and drilling.** `CATEGORY / LIST / SERIES / SEASON` are
+non-terminal — you drill into their children with `list()`. `MOVIE / EPISODE` are terminal —
+`findVideos()` resolves them to one or more `PLAYABLE` items (a final direct stream URL each).
+
+Single implementation: **`StreamingCommunityChannel`** (`engine/channels/`) — a Laravel + Inertia.js
+site whose pages ship their data as JSON, so browsing needs no HTML scraping. Playback resolves to
+a token-signed HLS `.m3u8` for native ExoPlayer, falling back to the embed page in a WebView.
+
+- **The site rotates its domain.** Every Inertia response's `props` carries `app_url` / `cdn_url`
+  next to `version`; `absorbSelfUrls()` reads them back and re-points `host` / `cdn` on every call.
+  **Never hardcode a domain** — the `@Volatile private var host` seed is just a cold-start guess.
+- The filterable catalog root is `catalogRoot()` (`kind = LIST`). Its filter travels as a
+  **query-string-shaped hint in `StreamItem.extra`** — `"type=movie&genre=4&year=2024&sort=release"`
+  — which `listArchive()` parses into real `/it/archive?…` params. Both apps' Browse filter UIs and
+  Home genre deep-links build this string; `BrowseFilter` (in each app) is its typed form.
+- `listSeasons()` stamps `tmdbId` and a real per-season `year` onto each SEASON item so the season
+  screen needs no extra fetch (see the ratings section).
+
+`ChannelRegistry.all` / `ChannelRegistry.byId(id)` is the only access point.
+`NetflixTop10` / `JustWatchTop10` are **ranking signals only** — they yield trending title *names*
+that still resolve and play through `StreamingCommunityChannel.search()`.
+
+**Profiles** (`engine/ProfileScope.kt`): every *personal* store — progress, watchlist, search history, watch stats, custom lists, new-release tracker, ratings, availability reminders — gets its SharedPreferences file name from `ProfileScope.prefsName(context, base)`, so switching profile swaps the whole set. The default profile keeps the legacy names (nothing saved before profiles moved); device-level prefs (theme, TMDB key, downloads, caches, resolver) are deliberately NOT scoped. A new personal store must use `prefsName` **and** be added to `ProfileScope.PERSONAL`, or deleting a profile would leave its data behind. Only `:client` ever switches; `:app` always reads the default profile. Switching in-app restarts the activity (`restartApp`), because ViewModels hold stores built for the old profile.
+
+On-device stores (`engine/`, all `SharedPreferences` + kotlinx.serialization JSON, no DB):
+`WatchProgressStore`, `WatchlistStore`, `SearchHistoryStore`. Both apps read/write the same files.
+
+### HLS → MKV download (`engine/download/`)
+
+Pure Kotlin + OkHttp (no media3, so both apps could use it; only `:client` does today).
+`HlsMkvDownloader.plan(masterUrl)` picks the highest-bandwidth H.264 variant plus **every** audio
+rendition and subtitle track; `download(plan, title, FileChannel)` writes ONE Matroska file with all
+of them, keeping each track's language/name/DEFAULT flag, forced subs flagged forced. Streaming, not
+stage-then-remux: segment N of the video and of each audio rendition are fetched together (6 steps
+in flight — the CDN throttles ~1.1 MB/s per connection), AES-128-decrypted, demuxed (`TsDemuxer`:
+PAT/PMT, PES, H.264 Annex B → length-prefixed + SPS geometry, ADTS → raw AAC + ASC) and written by
+`MkvWriter` once every track has moved past them — the only disk needed is the final file.
+Verified live (movie + full 58-min episode, checked with ffprobe/ffmpeg decode + an EBML walker):
+- Segments are MPEG-TS, AES-128, one key (`/storage/enc.key`) with an explicit IV; video variant
+  and each audio language are **separate** TS renditions sharing one PTS clock — timestamps are
+  kept raw (not rebased per track) so they stay aligned; video starts 83 ms after audio (B-frames).
+- Playlist `RESOLUTION` is the ladder rung, not the frame (a "1280x720" variant is 1280x534 with an
+  801:800 SAR) — dimensions come from the SPS.
+- Subtitles: one WebVTT file per language, `mm:ss.mmm` times, no X-TIMESTAMP-MAP. Forced tracks are
+  never `FORCED=YES` — only recognisable by name/LANGUAGE (`"ita-forced"` on one title,
+  `"forced-ita"` on another).
+- fMP4, byte-range and SAMPLE-AES segments throw `UnsupportedStreamException` up front.
+
+### Site traffic (`engine/SiteTraffic.kt`, `engine/TitleResolver.kt`)
+
+The site bans (Cloudflare 1006) addresses that send it scraper-like bursts — see the "Manca la
+lista" gotcha. Two rules keep the app under that line; don't add a fan-out that bypasses them:
+- **Every request to the site goes through `SiteTraffic.gate`** (the channel's `siteGet`; only the
+  site — vixcloud, TMDB/IMDb and the image CDN don't): ≤2 in flight, starts ≥500 ms apart. Work
+  nobody is waiting on runs under `withContext(SiteTraffic.Background)` — single file, 1.5 s pause
+  after each, never ahead of a user action. Home's chart/genre rows and hero enrichment, the Oscar
+  lists and `NewReleaseWorker` use it. `async` fan-outs are fine (the gate serialises them) but
+  still cost requests.
+- **Titles named elsewhere resolve through `TitleResolver`** (Netflix/JustWatch charts, TV guide,
+  cinema calendar, Oscar lists): one search each, remembered on disk — found 14 days, "not on the
+  site" 2 days, a failed search never. Home spends at most 15 uncached searches per load
+  (`TitleResolver.Budget`, shared by the rows in order) and stops at the first failed one.
+  `Channel.searchOrNull()` exists so a failed search isn't stored as "not in the catalogue".
+- `:client`'s Home shows the site's rows as soon as `home()` returns and slots the chart rows in
+  (under the personal rows) as they resolve; `:app` keeps its splash + wait-for-all (D-pad focus
+  doesn't tolerate rows appearing above it). Person-search verification is capped at 30 detail
+  pages.
+
+### Ratings & metadata (`engine/Imdb.kt`, `engine/Tmdb.kt`)
+
+The source site's own `score` is a stale second-hand TMDB import. `Channel.detail()` replaces it:
+
+- `Imdb.rating(imdbId)` — scrapes `imdb.com/title/{id}` JSON-LD `AggregateRating`. Keyless.
+- `Tmdb.lookup(tmdbId, isSeries)` — **keyless by default**: scrapes
+  `themoviedb.org/{tv|movie}/{id}?language=it-IT` (`og:description` = Italian synopsis,
+  `data-percent` = score). With `BuildConfig.TMDB_API_KEY` set it uses the TMDB **API** instead and
+  additionally gets vote counts + the official trailer. Both paths also return `posterUrl`, a 780 px
+  portrait poster (API `poster_path`, or the page's first `og:image` rewritten from `/t/p/w500/` to
+  `/w780/`), which `detail()` puts in `thumbnail` — the site's CDN posters are 200×300.
+- `Tmdb.seasonOverviewIt(tmdbId, n)` — Italian per-season synopsis (`Channel.seasonOverview`).
+- `Tmdb.seasonYears(tmdbId)` — real per-season release years (API `/tv/{id}`, or one scrape of the
+  server-rendered `/tv/{id}/seasons` page via `SEASON_ROW`). Without this every season inherited the
+  series' last-air year ("tutte 2026").
+- All merged in `StreamingCommunityChannel.detail()`; TMDB Italian text wins over the site's.
+- **`LanguageFlag`** (`ui/components/LanguageFlag.kt`, duplicated per app — own package, own `R`
+  class, same PNG assets): a small flag next to a track's language name, in both apps' audio/subtitle
+  picker and the Detail-page track lists. Rasters, not vectors like the rest of each app's icon set —
+  hand-converting ~18 flag SVGs into Android's constrained vector-drawable format wasn't reliable, and
+  flag *emoji* render inconsistently across OEM keyboards (this app's own Samsung target devices
+  among them). Rasterised once (`rsvg-convert`) from flag-icons (MIT; licence at
+  `third_party_licenses/flag-icons-MIT.txt`, repo root — the one shared-asset licence that lives
+  outside either app's own `third_party_licenses/`) into `res/drawable-nodpi/flag_<cc>.png`. Matches
+  the track's own `name`/label first — its leading English word ("Italian", "English", …) against a
+  small map — and only falls back to the normalised ISO-639-1 language code
+  (`Locale(code).language`) for a name it doesn't recognise. The name wins deliberately, checked live
+  against this source's own data twice: a "\[Forced\]" rendition routinely has **no language code at
+  all** ("I forced mancano le bandiere" — the TracksMenu screenshot showed flags on every CC track and
+  none on either \[Forced\] one), and on one title a "German" rendition's own LANGUAGE attribute was
+  "es" — wrong flag either way unless the (always-correct-so-far) name is tried first.
+  `selectForcedSubtitle` below needs the same name fallback, for the same reason.
+- `detail(item, withRatings = false)` skips the rating/trailer lookups — used by both apps'
+  `SearchViewModel.verifyCredited`, which fans `detail()` out over ~45 candidates per name tap to
+  check real cast/director credits (the site's search is fuzzy text, not a credit lookup).
+- `youtubeVideoId(raw)` (top-level in `Tmdb.kt`) normalises any id/URL form to the 11-char id.
+- `HlsMkvDownloader.plan(masterUrl)` (`engine/download/`) also answers "what languages does this title
+  carry" without downloading anything — `HlsDownloadPlan.audioTracks` / `.subtitleTracks` are
+  (display name, language code) pairs read from the master playlist + each audio rendition's own
+  small playlist (no segment/subtitle-file fetches). Both apps' Detail/title pages call this once
+  `findVideos()` has resolved a native-HLS (`serverId == "hls"`) source, and show "Lingue audio
+  disponibili" / "Sottotitoli disponibili" as flagged pill rows — see `LanguageFlag` below.
+- Every external lookup is cached in-process (`ConcurrentHashMap`) for the session.
+
+### `:app` — the TV app
+
+- **Navigation** (`Navigation.kt`, `NavigationKeys.kt`): Navigation 3 + `rememberNavBackStack`.
+  `navKeyFor(item)` is the **single kind→screen decision**. `MainNavigation` also collects
+  `RemoteControlBridge.incoming` (a phone pick → `navKeyFor`) and `PlaybackControlBridge.commands`
+  (a remote STOP → pop the player).
+- **Home load** (`ui/home/HomeViewModel.kt`): fans out `channel.home()`, the two trending charts,
+  personal rows and hero enrichment concurrently. `progress: StateFlow<List<String>>` is appended
+  via `log()` from those coroutines; `BrandedLoading(log = …)` renders its tail as a terminal-style
+  panel on the splash — call `log()` when adding a load step.
+- **Second-screen server** (`app/remote/`): trust model = Chromecast/DIAL (same-Wi-Fi, no auth).
+  `RemoteControlServer` (NanoHTTPD, default port `57813`) advertised over NSD/mDNS
+  (`RemoteControlAdvertiser`, service `_strcomm._tcp.`). Endpoints:
+  `/ping /search /list /play /now-playing /control /progress`. `RemoteControlBridge`
+  (pick → navigation) and `PlaybackControlBridge` (`PlayerScreen` ⇄ server) carry data between the
+  background HTTP thread and Compose. Runs as `RemoteControlService`, a foreground service (this
+  box otherwise kills the process on backgrounding, taking the server down with it), started from
+  `MainActivity`. `/progress` (GET/POST a `WatchProgress` list, engine-side) also backs `:client`'s
+  "Sincronizza con la TV" — same server, same trust model, a different device on the other end.
+- **Subtitle default**: `NativeHlsPlayer` now sets `trackSelectionParameters` to prefer Italian
+  audio/text and auto-selects a subtitle on load — **forced, and Italian specifically**
+  (`selectForcedSubtitle`, same function, copy for copy, as `:client`'s player). Previously `:app`
+  had no language preference and no default subtitle at all (`TracksMenu`'s own doc said "their
+  default" was simply off); `:client` already did the forced part, `:app` didn't either. "Forced"
+  itself isn't just the `SELECTION_FLAG_FORCED` bit — this source doesn't reliably set it on these
+  renditions either (the exact thing `engine/download`'s `HlsMkvDownloader` already found: "forced
+  tracks are never `FORCED=YES` — only recognisable by name/LANGUAGE"), so a label or language
+  containing "forced" counts too, and among forced candidates an Italian one (by language code or,
+  again, by name when the code is missing) wins outright over just matching the selected audio.
+- **Home, 2025 streaming-TV layout** (from the user's "2025 Netflix TV UI" video): the top bar is settings on the left (where the profile sits), search + text tabs Home / Serie TV / Film / Sfoglia in the middle (white pill on focus, Home marked current), the wordmark on the right — a scrim over the billboard, solid black once the list moves. Catalogue and chart rows use `ExpandingTitleCard` (`ui/components/Cards.kt`): a portrait poster at rest that grows sideways into the 16:9 still with the title `logo` when focused, same height, white outline instead of a zoom; the focused card uses `backdrop`, not `cover` (the site's covers have their own logo and badge baked in, which doubled up). While a row has focus, `FocusedTitleInfo` shows the title's genre · year · type · score and plot under it (`quality` is a score on catalogue items but "23:27 · CANALE 20" on the TV-guide row — the ★ only goes before a bare number). Personal rows keep `CoverCard` with the resume bar and title line.
+- **Icons and search** (mirrors `:client`): every icon is a Material Symbols Rounded vector (`res/drawable/ic_ms_*.xml`, via `Symbol` / `SymbolLabel` in `ui/components/Symbols.kt`, built on `androidx.tv.material3.Icon` so the focus colour carries through); no emoji glyphs in labels (the player's transient feedback maps its token strings to icons in `PlaybackFeedback`). `SearchScreen` has the same states as the touch app — before typing: "Di tendenza" (`CoverCard` row from `HomeSnapshot`, no site request), recent searches, genre buttons; while typing: genre matches between the field and the results; no match: a hint + genres. The D-pad rule is unchanged: DOWN on the field jumps to `contentFocusRequester`, which sits on the first *existing* thing below — genre matches, else the first trending card, else the first recent search, else the first genre — never on two nodes at once. **Not yet exercised with a remote**: compiled, installed and launched (Home loads, no crash) on a phone, but the D-pad walk through Search was interrupted — test it on the box before relying on it.
+- **`BrowseScreen` triple-role**: a series has no dedicated detail screen, so `BrowseScreen`'s root
+  can be a `LIST` (filterable catalog + `FilterBar`, incl. curated Academy Award lists resolved
+  through search), a `SERIES` (seasons grid) or a `SEASON` (episode list). `BrowseViewModel` seeds
+  its filter from `root.extra`.
+- **Ad/tracker/malware blocking in the WebView fallback** (`engine/AdBlock.kt`): the embed page
+  rendered by `WebViewPlayer` is the only place third-party HTML/JS runs — native ExoPlayer HLS
+  playback never touches it. `AdBlock.isBlocked(url)` checks a domain blocklist (StevenBlack/hosts,
+  fetched keyless and cached to a plain file, refreshed weekly; a small hardcoded `SEED` covers the
+  biggest ad networks before the first fetch lands) inside `shouldInterceptRequest`, on top of the
+  pre-existing `shouldOverrideUrlLoading` guard that blocks whole-page hijack redirects (added after
+  an observed incident — ad scripts navigating the entire WebView to a Google Ads policy page).
+  `:client` has no WebView fallback at all, so no exposure there. `:app`'s `WebView` also has no
+  `WebChromeClient` gaps left implicit: popups, permission prompts and third-party cookies are
+  explicitly denied rather than relying on default behavior.
+
+### `:mobile` — the phone remote
+
+`TvDiscovery` (NSD → `Flow<List<DiscoveredTv>>`) · `TvClient` (OkHttp against the server above) ·
+`TvPreferences` (last TV) · `RemoteViewModel` + `RemoteApp`. Connect flow pings `/ping` and only
+switches once it answers as a real StrComm TV; remembers the last TV and auto-reconnects on launch;
+a run of failed pings drops back to discovery. Same palette as the other two (`theme/Theme.kt`: black,
+neutral greys, red `#E53935`; launcher icon to match) but no "Verifica aggiornamenti" — a new Remote
+build is installed by hand from the release.
+
+### `:client` — the touch app
+
+- **Responsive shell** (`ClientApp.kt`): one `rememberNavBackStack` + a `selectedTab` int.
+  `isWideScreen()` = `screenWidthDp >= 600` → `WideTopBar` (tablet / phone-landscape) — a floating
+  bar with the split-color "StrComm" wordmark + the four tabs as pills, replacing a `NavigationRail`
+  that ate a column of width a touch surface doesn't need; narrower → bottom `NavigationBar`.
+  `entryProvider {}` wires the tabs (**Home / Novità / Cerca / Io**) and the pushed screens (Browse / Detail / Player / Settings / …). "Novità" (`NewHotScreen`) re-lists Home's catalogue and chart rows as a vertical feed of wide cards, from `HomeSnapshot.sections` (so no site request); "Io" (`MeScreen`) is the profile, the first titles of the list and the way into downloads, lists, the TV guide and Settings — Settings is no longer a tab. The old Sfoglia tab's job is now Home's "Tutto il catalogo" / Film / Serie TV chips (`BrowseRoot` is still a valid entry).
+- **Visual language** (the Netflix mobile study, our own colours and icons): pure-black theme, neutral greys and one red accent (Material Red 600 `#E53935`, not Netflix's brand red; same palette in `:app`'s `theme/Color.kt`, its launcher icon, splash and `banner.png`; the touch app defaults to dark whatever the phone's setting), with the split-colour `StrCommWordmark` (`ui/components/Wordmark.kt`) over the Home billboard's top-left on a phone; a title's main action is `PlayButton` (solid white, dark text) and everything secondary is `GreyButton`, on the Home billboard and the title page alike; Home poster rows are clean (`PosterCard(showBadges = false)`), and a "Continua a guardare" card carries a ⋮ that opens the long-press sheet; the title page stacks full-width buttons, then an `IconAction` strip, then underlined tabs. No Netflix asset, font, logo or brand colour is used. Home's billboard, a title page and a series page draw their artwork **up under the status bar**: `ClientApp` leaves the top inset to them (`edgeToTop`), publishes its height through `LocalTopInset` (`ui/components/TopInset.kt`) which they add to their hero height, and `StatusBarScrim` turns the bar solid as they scroll so text never runs under the clock; the Home type pills (Tutto il catalogo / Film / Serie TV) sit over the billboard. Theme tonal containers are neutral greys — M3's lavender defaults were showing on chips, tonal buttons and the bottom bar, which has no selection pill. Typography is **Barlow** (OFL, `res/font/barlow_*.ttf`, licence at `client/third_party_licenses/barlow-OFL.txt`), not Material's default Roboto — wired once, as a full `Typography` built from the Material baseline with every style's `fontFamily` swapped (`theme/Type.kt`), so every existing `.copy(fontWeight = …)` call site keeps working unchanged. Poster artwork is flatter (4dp corners, was 10dp) and its row gutter tighter (8dp, was 12dp) — a denser catalogue grid instead of rounded Material cards. **Home rebuilt from the reference videos** (2026-10-17; the user's YouTube links — a phone "NEW Netflix UI" short, a "2025 Netflix TV UI" capture, two Figma redesign tutorials — read frame by frame with `yt-dlp` + `ffmpeg` contact sheets, behaviour and layout only): the phone Home opens with a "Per <profilo>" header (search + `ProfileAvatar` on the right, wired to the Cerca / Io tabs), the type pills, then the billboard as an inset **card** — on a phone the whole 2:3 poster, uncropped, with the genres and Apri / La mia lista in a dark strip UNDER it (a shorter 0.78 card cropped heads off and laid the buttons over the poster's own title: "ancora su mobile taglia sopra"; no trailer, a 16:9 trailer cropped portrait shows a sliver); on a tablet a wide still with the title, buttons and muted trailer laid over it. The poster is TMDB's 780 px one once the hero is enriched (see `Tmdb.lookup`) — the site's own are 200×300 and blurred blown up ("troppo sgranata l'immagine"). The whole page is washed in the billboard's own colour fading to black (`ui/home/ArtworkTint.kt`: a 48 px copy through the app's image loader, hue averaged as a vector weighted by saturation × brightness, mostly-grey art → neutral), animated as the billboard rotates; dark theme only. Both apps' HomeViewModels drop the engine's "Sfoglia" catalogue card from the first row and title it "Di tendenza ora" — an unreachable site then shows the Error state instead of a lone blank card. The Home billboard auto-rotates every 7s (skips a cycle rather than fighting a manual swipe) with **no pagination dots** — a stock-carousel tell a streaming app's own billboard doesn't have.
+- **`fullBleed`** = `backStack.lastOrNull() is Player` — hides the nav bar/rail and drops the
+  Scaffold insets so the player is edge-to-edge. `PlayerScreen` *also* forces landscape
+  (`SCREEN_ORIENTATION_SENSOR_LANDSCAPE`) and hides the system bars itself.
+- **Back handling**: `NavDisplay` only handles back when `backStack.size > 1`. A separate
+  `BackHandler` covers tab roots (non-Home tab → Home; Home → `activity.finish()`).
+- **Screens** mirror the TV app through the same `:engine`: `HomeScreen` (hero `HorizontalPager`
+  with **▶ Apri** + **＋ La mia lista** — the latter wired straight to `WatchlistStore.toggle()`,
+  same as the hero card, not just the detail screen; Film/Serie TV/Documentari `TypeFilterRow`,
+  genre chips, ~10 progressively-appended genre rows, Netflix + JustWatch trending — the trending
+  rows use `RankedPosterCard`, a big low-contrast bleeding numeral to the poster's left, Top-10-chart
+  style, in place of a small overlay digit), `BrowseScreen` (same triple-role as `:app`; `FilterBar`
+  with Tipo/Genere/**Paese**/Anno/Ordina/**Premi→Oscar** — Paese (`CountryOption`, `Channel.countries()`)
+  filters by country of origin, verified live against the site's own archive-page props, not guessed),
+  `SeriesScreen` (Netflix-style — backdrop header, season `FilterChip` row, `EpisodeRow` list; backed
+  by `SeriesViewModel`), `DetailScreen` (enriched via `DetailViewModel` — `_preview` renders metadata
+  before `findVideos()` sources resolve), `SearchScreen` (one box for "titoli, generi o persone"; debounced type-ahead for titles, plus: before typing — trending titles from `HomeSnapshot` (Home's already-fetched row, so no extra site request), recent searches and genre chips; while typing — genre matches on top; no match — a hint + genres; voice input via the system `RecognizerIntent`, which is why the manifest has a `<queries>` entry; the result count is a live region. Modelled on behaviour read from Netflix's APK — see "Search study" below — not on its code or assets), `SettingsScreen`
+  (clears the three stores).
+- **Netflix-study features** (from the module map of Netflix 9.87.1's `ui` packages — behaviour only, our own code): the title page (`DetailScreen`) plays the trailer in its header via the shared `TrailerView` (muted, with a mute button; the still stays over it until YouTube reports playing; the WebView is *passive* — it never takes touches, so the page scrolls and the hero stays tappable), has a thumbs up/down (`RatingStore`, local, per profile) and "Panoramica / Simili" tabs ("Simili" = one catalogue page of the title's first genre, loaded in the background lane); long-pressing a card in "Continua a guardare" / "La mia lista" opens `ItemActionsSheet` (Dettagli / Rimuovi); the "La mia lista" row title opens `MyListScreen`, and lists (that and custom ones) sort by Recenti / A–Z / Anno / Piaciuti (`ListSort`); `ProfilesScreen` ("Chi sta guardando?") gates launch when more than one profile exists and is reachable from Settings; "Avvisami quando è disponibile" on a no-result search stores an `AvailabilityReminder` and `AvailabilityWorker` (12 h, background lane) re-searches and notifies when a title with all the searched words appears. Netflix's "Remind me" is not copied as such: the "Prossimamente al cinema" data is only (date, title), with no poster or id, and what resolves is already in the catalogue.
+- **Continue Watching**: `HomeViewModel.personalSections()` normalises any legacy `PLAYABLE` entry
+  to a navigable `MOVIE`/`EPISODE` so a tap opens Detail and re-resolves a fresh stream.
+  `PlayerScreen` saves progress against `playbackOrigin(item, originId)` — a rebuilt navigable item
+  keyed on `StreamItem.originId` (the stable content id), **not** the `PLAYABLE`'s own url (a
+  short-lived HLS token, useless later). Same pattern exists in `:app`'s player.
+- **Custom player** (`ui/player/PlayerScreen.kt`): tap toggles a Netflix-style overlay (back +
+  compact `InfoBlock`, centre transport, bottom control row + a buffered-aware scrubber); double-tap
+  edges seek ±10 s and flash a `SeekFlashBubble` (auto-dismisses after 650 ms — there was previously
+  no feedback at all for a double-tap seek). Every control — like every icon in `:client` — is a
+  Material Symbols Rounded vector (`res/drawable/ic_ms_*.xml`, via `Symbol` / `SymbolLabel` in
+  `ui/components/Symbols.kt`), not a Unicode/emoji glyph or the old Material Icons set
+  ("le icone non sono moderne"); `material-icons-extended` is no longer a dependency.
+  Control row: **Audio e CC** (`ModalBottomSheet` → `TrackSheet`), **Velocità** (0.5–2×),
+  **Adatta / Riempi** (see gotcha), **Info**, **Blocca**. The scrubber is a `Slider` with
+  `inactiveTrackColor = Transparent` layered over a plain `Box` painting the buffered fraction
+  behind it — reuses `Slider`'s already-correct drag/tap-to-seek instead of hand-rolling one.
+  **Info** opens `InfoPanel`, a right-side sheet unifying content metadata (title, season/episode,
+  plot, cast chips) *and* streaming stats (resolution · bitrate · codec · fps · audio · buffer) in
+  one scrollable surface — previously two separate, independently-toggled overlays. A
+  `CircularProgressIndicator` now shows during any `STATE_BUFFERING` (initial load included, which
+  had no indicator before). A forced subtitle is auto-selected on the first `onTracksChanged`
+  (`selectForcedSubtitle`) — Italian preferred outright when one exists, else one matching the
+  selected audio; "forced" also covers a label/language containing "forced" (this source doesn't
+  reliably set the `SELECTION_FLAG_FORCED` bit on these renditions — same thing `engine/download`'s
+  `HlsMkvDownloader` found), which is also how a languageless "Italian \[Forced\]" rendition gets
+  recognised as Italian at all. Preferred audio + text language seeded to `"it"`.
+- **Auto-next-episode** (`:client`): ported from `:app` — `resolveNextEpisode` finds the next
+  episode in the same season and resolves it via `findVideos()`. Starts resolving ~20 s before the
+  current episode ends (`NEXT_UP_LOOKAHEAD_MS`) so it's ready in time, not fetched cold at the end;
+  swaps `activeItem` (rebuilding the `ExoPlayer`, keyed on `activeItem.url`, same pattern as `:app`)
+  once the remaining time drops under `NEXT_UP_SWAP_MS`. `NextUpCard` shows a live countdown +
+  thumbnail in the bottom-right during that window; **Annulla** sets a per-episode dismiss flag so a
+  cancelled prompt doesn't immediately reappear. Movies (`episode == null`) never swap.
+- **Downloads** (`client/download/`, `ui/downloads/`): "⬇ Scarica" on Detail enqueues
+  `DownloadWorker` — a WorkManager foreground (`dataSync`) worker, one unique work per content id —
+  which re-resolves a fresh stream, checks free space, and runs the engine's `HlsMkvDownloader`
+  into MediaStore `Movies/StrComm/<title>.mkv` (IS_PENDING until complete; Android 8–9 fall back to
+  the app's own Movies dir). Finished files are recorded in `DownloadsStore` and play offline via a
+  PLAYABLE with `serverId = "local"`: `PlayerScreen` then skips the HLS source (ExoPlayer's default
+  source reads the content:// .mkv) and auto-next-episode. "I miei download" (Settings) lists
+  progress/cancel, play, "Apri con…" (VLC, MX…) and delete. Not verified on a device yet — the
+  pipeline was verified on the JVM against the live CDN; the Android glue compiled and linted only.
+
+### Search study (2026-10-16)
+
+The touch app's search was reworked after reading Netflix 9.87.1's APK for *behaviour* (manifest, resource strings, class names and field types via `aapt2` + `dexdump`) — never its code or assets; Netflix's UI is Jetpack Compose + a server-driven flex layout, so there is no layout file to read, and its font isn't in the package. What the APK proves: the field's scope is "titles, genres or people"; three destinations (pre-query / suggestions / results, `QueryType` PREQUERY|SEARCH); voice search via the system recogniser (`voiceSearchMode=0x5` + a `RECOGNIZE_SPEECH` `<queries>`); a per-search UUID and `EmptyQueryException`; cancel/fail telemetry. What it doesn't: debounce timing, ranking. Evidence files were scratch-only; the method is reproducible with the two commands above.
+
+## Conventions
+
+- **ktfmt style**: 2-space indent, no semicolons, trailing commas, ~120 col.
+- Comments are dense and explain **why**, frequently quoting the user bug report that motivated the
+  change (e.g. `"dopo 20 minuti… il box va in standby"`). Match the surrounding density.
+- Errors: `runCatching { … }.getOrNull() / .getOrDefault(…)` almost everywhere; engine/net helpers
+  never throw to the UI.
+- Coroutines: `withContext(Dispatchers.IO)` / `launch(Dispatchers.IO)` inside engine/VM methods;
+  `viewModelScope` in VMs; `coroutineScope { async … awaitAll() }` for the parallel fan-outs.
+- Persistence: `SharedPreferences` + kotlinx.serialization JSON. No database.
+- `:app` UI is **D-pad only** — focus is hand-managed with `FocusRequester` + `onPreviewKeyEvent`;
+  read the long comments in `HomeScreen.kt` / `PlayerScreen.kt` before touching focus logic.
+  `:client` UI is touch-only and never assumes a focus model.
+- User-facing strings are Italian (no `strings.xml` catalogue — inline literals).
+
+## Gotchas
+
+- **The TV box starts playing on its own**: right after a fresh install + `am start` it went straight
+  into full-screen playback. Not a startup bug — `RemoteControlServer`'s `/play` (same-Wi-Fi, no
+  auth, by design) resolves a POSTed item and pushes it through `RemoteControlBridge` straight into
+  `PlayerScreen`, which autoplays; a phone running the Remote or the touch app had sent one. The
+  server logs nothing per request, so `logcat` can't say which device it was (media3's `PesReader` /
+  `BufferPoolAccessor2.0` lines only prove a player is running). Separately, Navigation 3's
+  `rememberNavBackStack` restores a saved back stack — a `Player` entry included — after a plain
+  process death; a force-stop + fresh launch always starts at Home.
+
+- **`LocalContext` → Activity differs by app.** In `:app`, `setContent` under `androidx.tv`
+  material wraps the context in a `ContextThemeWrapper`, so `context as? Activity` is silently
+  null — use `Context.findActivity()` (in `PlayerScreen.kt`). In `:client` (plain Material3),
+  `context as? Activity` works and is used directly.
+- **Player resize needs a `TextureView`.** `PlayerView`'s default `SurfaceView` is a separate
+  compositor layer the parent can't crop, so `RESIZE_MODE_ZOOM` ("Riempi") leaves the video boxed.
+  `:client` inflates `res/layout/player_view.xml` (`app:surface_type="texture_view"`) instead of
+  constructing `PlayerView` in code. Don't "simplify" that back to `PlayerView(ctx)`.
+- **Auto-next-episode** (`:app`): `PlayerScreen` swaps `activeItem` in place and `remember`s a new
+  `ExoPlayer` keyed on `item.url`. The `AndroidView` `factory` runs once, so its `update` block
+  must reassign `view.player` and re-`requestFocus()` — otherwise frozen video + dead D-pad.
+- **`LazyColumn`-disposed hero** (`:app`): `requestFocus()` on a scrolled-away first item is a
+  silent no-op; `scrollToItem(0)` first (see `HomeScreen.kt` / `HomeHeader`).
+- **Trending rows** must dedup by a stable key or the `LazyRow` crashes ("Key … was already used").
+  Home section keys and card keys are `channelId + url`.
+- **YouTube embeds need an HTTP Referer** (`:client` Home hero's muted trailer): a
+  `youtube.com/embed/…` URL loaded straight into a WebView sends none, and YouTube answers that with
+  "Errore 153 · errore di configurazione del video player" ("ho un errore su s24 errore
+  configurazione video player youtube"). Pass `mapOf("Referer" to "https://<app id>")` to `loadUrl`
+  — YouTube's documented client identity for native apps. Trailers opened via intent (Detail's
+  button, the TV app's SmartTube path) aren't affected.
+- **A WebView inside `AndroidView` needs `MATCH_PARENT` layout params.** AndroidView attaches its view
+  `WRAP_CONTENT`, and a WebView whose height is `WRAP_CONTENT` sizes itself to its content: the
+  page gets a zero-height layout viewport, so anything `height: 100%` collapses. The hero trailer
+  played with sound-off but showed black ("YouTube non parte") — DevTools showed innerHeight 420 yet
+  the player and video 800×0. For DevTools on a release build, temporarily call
+  `WebView.setWebContentsDebuggingEnabled(true)`, then `adb forward tcp:9333
+  localabstract:webview_devtools_remote_<pid>` and talk CDP to `/json`'s `webSocketDebuggerUrl`
+  (Node's global `WebSocket` is enough; `Page.createIsolatedWorld` reaches cross-origin iframes).
+  Some trailers can't play embedded at all (embedding disabled by the owner, age-restricted,
+  region-locked — "es american horror story"), so the hero keeps its backdrop *over* the WebView
+  and fades it out only when `evaluateJavascript` reads `movie_player.getPlayerState() == 1`; an
+  error card (`.ytp-error`) or 20 s without playback leaves the picture up.
+- **Insets in `:client`**: `Scaffold` pads its content but does not consume the insets, so a screen that adds `windowInsetsPadding(WindowInsets.safeDrawing)` inside `ClientApp` gets the status bar twice (and the nav bar again at the bottom of a list item) — "Novità" had a ~50 dp hole above its title, and the title page's back button floated low. Screens inside `ClientApp` rely on the Scaffold; only Home / title page / series page take the top themselves (`LocalTopInset`); the launch-gate `ProfilesScreen` gets `safeDrawingPadding()` from `MainActivity`.
+- **YouTube embed chrome** (`TrailerView`): the embed shows its own title bar, prev/pause/next buttons, share, "next video" and logo over the first seconds of any trailer, and letterboxes the picture to 16:9 inside the hero box. `PREVIEW_STYLE_JS` (injected on `onPageFinished` and again once playing) hides every child of `#movie_player` except `.html5-video-container` and forces the `<video>` to fill the page with `object-fit: cover` in viewport units (the container has no height of its own); the id selector outranks YouTube's own rules. Class names were checked against `www-player.css` (`curl https://www.youtube.com/s/player/<hash>/www-player.css`, hash in the embed page's `<link>`), and the shipped scripts against the real embed in headless Chrome over CDP (mobile UA, 411×260 @ 2.625, `Page.navigate` with `referrer`). `FIT_PICTURE_JS` then looks for black bars baked into the trailer (a 2.39:1 film in a 16:9 frame) by sampling the video onto a 64×36 canvas and zooms through `--sc-zoom`; the smallest bar seen over ~9 s wins, so a fade-in or a dark scene never over-zooms. Both scripts are plain string constants in `TrailerView.kt` — extract them from the Kotlin source to test them, never retype.
+- **YouTube on TV boxes**: often no official app — only SmartTube + a "no browser" stub. Open
+  trailers with the `youtube.com/watch?v=` URL (**not** the `vnd.youtube:` scheme, which SmartTube
+  errors on) and target the sole / SmartTube handler explicitly. Needs the `<queries>` block in
+  `app/src/main/AndroidManifest.xml` for API 30+ package visibility.
+- **Fire TV Stick install rejected as "incompatible"**: Fire OS's installer hard-checks
+  `minSdkVersion` against the device's own API level before it will even attempt the install — a
+  relabeled copy of an incompatible APK still fails identically. `:app` was minSdk 26; most Fire TV
+  Stick units run Fire OS 6 (Android 7.1 → API 25) or older, below that floor. Fixed by lowering
+  `:app` **and** `:engine` (a dependency floor propagates to consumers) to minSdk 23 — the true
+  limit is `androidx.tv:tv-material`'s own minSdk, found via the manifest-merger error, not a
+  guess. 23 still excludes only the original 2014/2016 non-4K sticks (Fire OS 5, API 22). If minSdk
+  ever needs to move again, don't just edit the number and assume it builds — rerun
+  `:app:assembleRelease` and read the manifest-merger error for the real floor.
+- **Fire TV Stick covers blank** ("non si vedono le copertine") while the catalog loaded fine: the
+  CDN checked out for every device (plain lossy WebP, same GlobalSign-rooted chain as the site), so
+  `:app`'s Coil loader now uses `Net.client` (the stack the working catalog uses) instead of its own
+  bare OkHttp, bypasses Coil's separate ConnectivityChecker, and disables hardware bitmaps on Amazon
+  devices. Failures log under the `StrCommImages` tag — `adb logcat -s StrCommImages` if it recurs.
+  Not reproduced on a Stick (none on ADB), so the actual root cause among those three is unconfirmed.
+- **"Manca la lista" — Home's StreamingCommunity row holds only the "Sfoglia" card**: that is
+  `home()`'s fallback when `fetchInertia("$host/")` fails, i.e. the site is unreachable, not a UI
+  bug (the TV's `/search` returns `[]` too). Check from the same network with
+  `curl -s https://<domain>/`: a 403 with body `error code: 1006` is Cloudflare's **IP ban set by the
+  site owner**. Seen 2026-09-28, and **caused by the app itself**: the home IP, the new one after a
+  modem restart, and each fresh NordVPN exit were all banned soon after the app ran on them ("si
+  apre e poi mi banna nuovamente"), while the site answered 200 elsewhere. (It first looked like an
+  ISP-range ban — two WindTre /16s refused — but each address had simply been used by the app.)
+  One Home load fired ~80–100 site requests within seconds. Fixed by `SiteTraffic` +
+  `TitleResolver` (see Architecture): measured on the S24 afterwards, 70 requests over 94 s across
+  two launches plus browsing and playback, all 200, and the same exit still accepted minutes later.
+  Bans already in place are not lifted by the fix — a banned address needs a VPN exit that isn't.
+  `adb logcat -s StrCommSite` lists every site request with its status. To see what the site
+  returns to a *phone's* network (e.g. through its VPN) without touching its UI, relay through
+  toybox `nc` on the phone: `adb shell "nc -L -s 127.0.0.1 -p 18443 nc <domain> 443" &`,
+  `adb forward tcp:18443 tcp:18443`, then `curl --connect-to <domain>:443:127.0.0.1:18443
+  https://<domain>/` from the PC (TLS stays end to end); kill the listener and `adb forward --remove`.
+
+## Pre-existing lint, found and fixed in passing (2026-10-16)
+
+`:app:lintDebug` had two failures that pre-date this session's changes (confirmed by stashing and
+re-running on a clean `HEAD`) — a toolchain/library-version drift, not a regression from any feature
+work:
+- `Iterable<T>.forEach { }` tripped `NewApi` (`current min is 23`) at every one of its 7 call sites
+  across the module. Kotlin's `forEach` is normally a fully-inlined stdlib extension with no trace of
+  `java.lang.Iterable#forEach` in the compiled bytecode, so this reads like a lint/Kotlin-version
+  interaction rather than a real API-level problem — but the safe, zero-risk fix either way is the
+  same: a plain `for (x in xs)` loop compiles to no named `forEach` call at all. Done at every site;
+  none were touched for any other reason.
+- `OkHttpDataSource` (NativeHlsPlayer's data source — unrelated to anything in this session) needed
+  the same `@androidx.annotation.OptIn(UnstableApi::class)` `:client`'s player already carries for
+  the identical class.
+
+## Not built yet
+
+- **Phone companion "Browse" tab** (`:mobile`) — design decided, not implemented: add `GET /home`
+  to `RemoteControlServer` (return `channel.home()` + Continue-Watching / My-List — pass a
+  `Context` into the server ctor for the stores), make `HomeSection` `@Serializable` in `:shared`,
+  add `TvClient.home()` + a `HomeState` in `RemoteViewModel`, render poster rows in the idle search
+  screen.
+- **Per-episode i18n** — episode titles/plots are whatever the source ships (English for some
+  series); only series and per-season synopses are localised. Per-episode = N TMDB calls/season.
+- **TMDB genres** localise only on the API path; the keyless scrape keeps the site's genres.
+- A second `Channel` implementation — the whole engine is built for it but only
+  `StreamingCommunityChannel` exists.

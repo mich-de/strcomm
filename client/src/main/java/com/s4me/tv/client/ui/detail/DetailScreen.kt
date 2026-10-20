@@ -1,0 +1,407 @@
+package com.s4me.tv.client.ui.detail
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import coil3.compose.AsyncImage
+import com.s4me.tv.client.R
+import com.s4me.tv.client.ui.components.BackCircleButton
+import com.s4me.tv.client.ui.components.ErrorScreen
+import com.s4me.tv.client.ui.components.GreyButton
+import com.s4me.tv.client.ui.components.IconAction
+import com.s4me.tv.client.ui.components.LanguageFlag
+import com.s4me.tv.client.ui.components.LocalTopInset
+import com.s4me.tv.client.ui.components.PlayButton
+import com.s4me.tv.client.ui.components.PosterCard
+import com.s4me.tv.client.ui.components.StatusBarScrim
+import com.s4me.tv.client.ui.components.SymbolLabel
+import com.s4me.tv.client.ui.components.TrailerView
+import com.s4me.tv.client.ui.downloads.DownloadButton
+import com.s4me.tv.client.ui.lists.AddToListSheet
+import com.s4me.tv.engine.RatingStore
+import com.s4me.tv.engine.StreamItem
+import com.s4me.tv.engine.WatchProgressStore
+import com.s4me.tv.engine.WatchlistStore
+import com.s4me.tv.engine.youtubeVideoId
+import java.util.Locale
+import kotlinx.coroutines.delay
+
+@Composable
+fun DetailScreen(
+  item: StreamItem,
+  onOpen: (StreamItem) -> Unit,
+  onPlay: (StreamItem) -> Unit,
+  onPersonSearch: (String) -> Unit,
+  onBack: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val viewModel: DetailViewModel = viewModel(key = item.url) { DetailViewModel(item) }
+  val state by viewModel.uiState.collectAsStateWithLifecycle()
+  val display by viewModel.preview.collectAsStateWithLifecycle()
+  val related by viewModel.related.collectAsStateWithLifecycle()
+  val similar by viewModel.similar.collectAsStateWithLifecycle()
+  val tracks by viewModel.tracks.collectAsStateWithLifecycle()
+  val context = LocalContext.current
+  val scroll = rememberScrollState()
+  // Status bar height this page covers itself: the hero runs up under it (see LocalTopInset).
+  val topInset = LocalTopInset.current
+  // The status bar turns solid as the hero scrolls away.
+  val scrimRamp = with(LocalDensity.current) { 200.dp.toPx() }
+  val scrimProgress by remember { derivedStateOf { scroll.value / scrimRamp } }
+
+  // The header plays the trailer in place, muted, once the page has settled — the title page's
+  // billboard. The still stays on top until YouTube itself reports playing, so a trailer that can't
+  // be embedded (disabled, age-restricted) leaves the picture instead of a black box.
+  val trailerId = display.trailerYoutubeId
+  var showTrailer by remember(trailerId) { mutableStateOf(false) }
+  var trailerPlaying by remember(trailerId) { mutableStateOf(false) }
+  var muted by remember { mutableStateOf(true) }
+  LaunchedEffect(trailerId) {
+    if (trailerId != null) {
+      delay(1200)
+      showTrailer = true
+    }
+  }
+  val backdropAlpha by animateFloatAsState(if (trailerPlaying) 0f else 1f, animationSpec = tween(700), label = "detailBackdrop")
+  var tab by remember { mutableIntStateOf(0) }
+
+  Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(scroll)) {
+      Box(modifier = Modifier.fillMaxWidth().height(300.dp + topInset)) {
+        if (showTrailer && trailerId != null) {
+          TrailerView(youtubeId = trailerId, muted = muted, onPlaying = { trailerPlaying = true }, modifier = Modifier.fillMaxSize())
+        }
+        AsyncImage(
+          model = display.backdrop ?: display.thumbnail,
+          contentDescription = display.title,
+          contentScale = ContentScale.Crop,
+          // Crop from the top, not the centre — a centred crop of a taller-than-frame still lops
+          // the top off ("se ci sono persone... vengono tagliate le teste").
+          alignment = Alignment.TopCenter,
+          modifier = Modifier.fillMaxSize().graphicsLayer { alpha = backdropAlpha }.background(MaterialTheme.colorScheme.surfaceVariant),
+        )
+        Box(
+          Modifier.fillMaxSize().background(
+            Brush.verticalGradient(0.4f to Color.Transparent, 1f to MaterialTheme.colorScheme.background)
+          )
+        )
+        // Under the status bar and the back button, so they read on a bright picture.
+        Box(Modifier.fillMaxWidth().height(topInset + 64.dp).background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent))))
+        if (trailerPlaying) {
+          IconButton(
+            onClick = { muted = !muted },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp).size(40.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape),
+          ) {
+            Icon(
+              ImageVector.vectorResource(if (muted) R.drawable.ic_ms_volume_off else R.drawable.ic_ms_volume_up),
+              contentDescription = if (muted) "Attiva l'audio" else "Disattiva l'audio",
+              tint = Color.White,
+              modifier = Modifier.size(22.dp),
+            )
+          }
+        }
+      }
+
+      Column(modifier = Modifier.padding(horizontal = 20.dp).padding(top = 4.dp, bottom = 32.dp)) {
+        Text(display.title, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold))
+        display.seriesTitle?.let { Text(it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+
+        val badge = (display.imdbRating ?: display.tmdbRating)?.let { "★ %.1f".format(it) } ?: display.quality
+        val meta = listOfNotNull(display.year, badge, display.runtime?.let { "$it min" }).joinToString("  ·  ")
+        if (meta.isNotBlank()) {
+          Text(meta, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        }
+        val ratingSrc =
+          listOfNotNull(
+            display.imdbRating?.let { "IMDb %.1f".format(it) + (display.imdbVotes?.let { v -> " (${formatVotes(v)})" } ?: "") },
+            display.tmdbRating?.let { "TMDB %.1f".format(it) + (display.tmdbVotes?.let { v -> " (${formatVotes(v)})" } ?: "") },
+          )
+        if (ratingSrc.isNotEmpty()) {
+          Text(ratingSrc.joinToString("  ·  "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+        }
+        display.genres?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp)) }
+
+        PlayActions(
+          item = display,
+          state = state,
+          onPlay = onPlay,
+          onTrailer = { id -> openTrailer(context, id) },
+          modifier = Modifier.padding(top = 16.dp),
+        )
+
+        if (similar.isNotEmpty()) {
+          UnderlineTabs(labels = listOf("Panoramica", "Simili"), selected = tab, onSelect = { tab = it }, modifier = Modifier.padding(top = 18.dp))
+        }
+
+        if (tab == 1 && similar.isNotEmpty()) {
+          SimilarGrid(items = similar, onOpen = onOpen, modifier = Modifier.padding(top = 16.dp))
+        } else {
+          display.plot?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 18.dp))
+          }
+
+          NameRow("Cast", display.cast, onPersonSearch, Modifier.padding(top = 16.dp))
+          NameRow("Regia", display.director, onPersonSearch, Modifier.padding(top = 8.dp))
+          tracks?.let { TrackLanguagesSection(it, modifier = Modifier.padding(top = 16.dp)) }
+
+          if (related.isNotEmpty()) {
+            SagaRow(items = related, onOpen = onOpen, modifier = Modifier.padding(top = 24.dp))
+          }
+        }
+
+        if (state is DetailUiState.Error) {
+          Text((state as DetailUiState.Error).message, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 16.dp))
+        }
+      }
+    }
+
+    // The back button's row (40 dp + its 8 dp margins) is part of the bar once the page has scrolled.
+    StatusBarScrim(scrimProgress, extra = 56.dp)
+    BackCircleButton(onBack = onBack, modifier = Modifier.padding(top = topInset))
+  }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PlayActions(
+  item: StreamItem,
+  state: DetailUiState,
+  onPlay: (StreamItem) -> Unit,
+  onTrailer: (String) -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val context = LocalContext.current
+  val progressStore = remember { WatchProgressStore(context) }
+  val watchlistStore = remember { WatchlistStore(context) }
+  val resumeMs = remember(item.url) { progressStore.positionFor(item.url) }
+  var inList by remember(item.url) { mutableStateOf(watchlistStore.contains(item.url)) }
+  var showListsSheet by remember { mutableStateOf(false) }
+  val ratingStore = remember { RatingStore(context) }
+  var rating by remember(item.url) { mutableIntStateOf(ratingStore.get(item.url)) }
+
+  val sources = (state as? DetailUiState.Success)?.sources.orEmpty()
+  val ready = sources.firstOrNull()
+  // The title page's action block, in the order streaming apps put it: one white button for the
+  // thing to press, grey ones under it at full width, then a strip of icon actions.
+  Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    if (resumeMs != null && resumeMs > 0) {
+      PlayButton("Riprendi · ${formatTime(resumeMs)}", R.drawable.ic_ms_play_arrow_fill, onClick = { ready?.let(onPlay) }, enabled = ready != null, modifier = Modifier.fillMaxWidth())
+      GreyButton(
+        "Ricomincia",
+        R.drawable.ic_ms_restart_alt,
+        onClick = {
+          progressStore.remove(item.url)
+          ready?.let(onPlay)
+        },
+        enabled = ready != null,
+        modifier = Modifier.fillMaxWidth(),
+      )
+    } else {
+      PlayButton(
+        if (state is DetailUiState.Loading) "Caricamento…" else "Riproduci",
+        R.drawable.ic_ms_play_arrow_fill,
+        onClick = { ready?.let(onPlay) },
+        enabled = ready != null,
+        modifier = Modifier.fillMaxWidth(),
+      )
+    }
+    DownloadButton(item = item, onPlayOffline = onPlay, modifier = Modifier.fillMaxWidth())
+
+    Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+      IconAction(
+        if (inList) R.drawable.ic_ms_check else R.drawable.ic_ms_add,
+        "La mia lista",
+        onClick = { inList = watchlistStore.toggle(item) },
+        modifier = Modifier.weight(1f),
+      )
+      // A personal marker (kept on the device, per profile) — no recommender behind it.
+      IconAction(
+        if (rating == 1) R.drawable.ic_ms_thumb_up_fill else R.drawable.ic_ms_thumb_up,
+        "Mi piace",
+        onClick = { rating = ratingStore.toggle(item.url, 1) },
+        modifier = Modifier.weight(1f),
+      )
+      IconAction(
+        if (rating == -1) R.drawable.ic_ms_thumb_down_fill else R.drawable.ic_ms_thumb_down,
+        "Non mi piace",
+        onClick = { rating = ratingStore.toggle(item.url, -1) },
+        modifier = Modifier.weight(1f),
+      )
+      item.trailerYoutubeId?.let { id -> IconAction(R.drawable.ic_ms_movie, "Trailer", onClick = { onTrailer(id) }, modifier = Modifier.weight(1f)) }
+      IconAction(R.drawable.ic_ms_playlist_add, "Liste", onClick = { showListsSheet = true }, modifier = Modifier.weight(1f))
+    }
+  }
+
+  if (showListsSheet) {
+    AddToListSheet(item = item, onDismiss = { showListsSheet = false })
+  }
+}
+
+/** Tabs as text with an underline under the selected one — the title page's "Panoramica | Simili". The
+ *  underline is drawn behind each label, so a tab is as wide as its text and the row can hold several. */
+@Composable
+private fun UnderlineTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+  val accent = MaterialTheme.colorScheme.primary
+  Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+    labels.forEachIndexed { index, label ->
+      val active = index == selected
+      Text(
+        label.uppercase(),
+        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+        color = if (active) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier =
+          Modifier.clickable { onSelect(index) }
+            .drawBehind {
+              if (active) drawRect(accent, topLeft = Offset(0f, size.height - 3.dp.toPx()), size = Size(size.width, 3.dp.toPx()))
+            }
+            .padding(top = 8.dp, bottom = 11.dp),
+      )
+    }
+  }
+}
+
+/** "Simili": titles of the same genre as a wrapping grid of posters (see [DetailViewModel.similar]). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SimilarGrid(items: List<StreamItem>, onOpen: (StreamItem) -> Unit, modifier: Modifier = Modifier) {
+  FlowRow(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    items.forEach { m -> PosterCard(item = m, onClick = { onOpen(m) }, width = 104.dp, showLabel = true, showBadges = false) }
+  }
+}
+
+/** "Le lingue audio disponibili e sottotitoli disponibili" — read from the HLS master playlist
+ *  (see [DetailViewModel.readAvailableTracks]); absent entirely while it's still loading or for a
+ *  title with no native-HLS source to read it from. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TrackLanguagesSection(tracks: AvailableTracks, modifier: Modifier = Modifier) {
+  if (tracks.audio.isEmpty() && tracks.subtitles.isEmpty()) return
+  Column(modifier = modifier) {
+    if (tracks.audio.isNotEmpty()) TrackPillRow("Audio disponibili", tracks.audio)
+    if (tracks.subtitles.isNotEmpty()) TrackPillRow("Sottotitoli disponibili", tracks.subtitles, modifier = Modifier.padding(top = if (tracks.audio.isNotEmpty()) 14.dp else 0.dp))
+  }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TrackPillRow(label: String, items: List<Pair<String, String?>>, modifier: Modifier = Modifier) {
+  Column(modifier = modifier) {
+    Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    FlowRow(modifier = Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      items.forEach { (name, lang) ->
+        AssistChip(
+          onClick = {},
+          shape = RoundedCornerShape(50),
+          label = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              LanguageFlag(lang, name)
+              Spacer(Modifier.width(6.dp))
+              Text(name)
+            }
+          },
+        )
+      }
+    }
+  }
+}
+
+/** "Altri capitoli della saga" — the TMDB collection row (see [DetailViewModel.related]). */
+@Composable
+private fun SagaRow(items: List<StreamItem>, onOpen: (StreamItem) -> Unit, modifier: Modifier = Modifier) {
+  Column(modifier = modifier) {
+    Text(
+      "Altri capitoli della saga",
+      style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+    )
+    LazyRow(modifier = Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+      items(items, key = { it.url }) { m -> PosterCard(item = m, onClick = { onOpen(m) }, width = 104.dp, showBadges = false) }
+    }
+  }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun NameRow(label: String, names: String?, onClick: (String) -> Unit, modifier: Modifier = Modifier) {
+  names ?: return
+  Column(modifier = modifier) {
+    Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // Wraps instead of scrolling ("non mi piace che devo scrollare a destra" — a name trailing off
+    // at the edge with no "more" hint read as cut-off content, not a hint to swipe).
+    FlowRow(modifier = Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      names.split(", ").forEach { name -> AssistChip(onClick = { onClick(name) }, label = { Text(name) }, shape = RoundedCornerShape(50)) }
+    }
+  }
+}
+
+private fun formatVotes(count: Int): String = String.format(Locale.ITALY, "%,d", count)
+
+private fun formatTime(ms: Long): String {
+  val s = ms / 1000
+  val h = s / 3600
+  val m = (s % 3600) / 60
+  return if (h > 0) "%d:%02d:%02d".format(h, m, s % 60) else "%d:%02d".format(m, s % 60)
+}
+
+private fun openTrailer(context: Context, videoId: String) {
+  val id = youtubeVideoId(videoId) ?: return
+  val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=$id")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+  runCatching { context.startActivity(intent) }
+}

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mirrors theme.Color.kt's Compose palette — kept in sync by hand since the splash/base
+         window theme renders before any Compose code runs and can't read those values directly. -->
+    <color name="background_dark">#000000</color>
+    <color name="accent_red">#E53935</color>
+</resources>

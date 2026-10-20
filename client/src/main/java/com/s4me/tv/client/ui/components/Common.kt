@@ -1,0 +1,219 @@
+package com.s4me.tv.client.ui.components
+
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
+import com.s4me.tv.client.R
+import com.s4me.tv.engine.ItemKind
+import com.s4me.tv.engine.StreamItem
+
+val POSTER_WIDTH = 116.dp
+
+@Composable
+fun LoadingScreen(modifier: Modifier = Modifier) {
+  Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+  }
+}
+
+@Composable
+fun ErrorScreen(message: String, onRetry: (() -> Unit)? = null, modifier: Modifier = Modifier) {
+  Column(
+    modifier = modifier.fillMaxSize().padding(32.dp),
+    verticalArrangement = Arrangement.Center,
+    horizontalAlignment = Alignment.CenterHorizontally,
+  ) {
+    Text(message, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
+    if (onRetry != null) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(top = 16.dp).clip(RoundedCornerShape(50)).clickable(onClick = onRetry).padding(horizontal = 20.dp, vertical = 10.dp),
+      ) {
+        Symbol(R.drawable.ic_ms_refresh, tint = MaterialTheme.colorScheme.primary, size = 20.dp)
+        Spacer(Modifier.width(8.dp))
+        Text("Riprova", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+      }
+    }
+  }
+}
+
+/** A poster tile: artwork, optional rank numeral, optional resume bar, title beneath (for the
+ *  personal rows where the show name matters). Fixed [width]; height follows the 2:3 poster ratio. */
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
+fun PosterCard(
+  item: StreamItem,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+  width: Dp = POSTER_WIDTH,
+  showLabel: Boolean = false,
+  onLongClick: (() -> Unit)? = null,
+  showBadges: Boolean = true,
+  onMenu: (() -> Unit)? = null,
+) {
+  Column(modifier = modifier.width(width).combinedClickable(onClick = onClick, onLongClick = onLongClick)) {
+    Box {
+      AsyncImage(
+        model = item.thumbnail,
+        contentDescription = item.title,
+        contentScale = ContentScale.Crop,
+        modifier =
+          Modifier.fillMaxWidth()
+            .aspectRatio(2f / 3f)
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+      )
+      // Year (top-left) and score (top-right) badges, mirroring the TV app's poster cards.
+      // Rows that want the artwork clean (Home, like a streaming app's own) turn the badges off.
+      if (showBadges) {
+        item.year?.let { CornerBadge(it, Modifier.align(Alignment.TopStart)) }
+        item.quality?.let { CornerBadge(it, Modifier.align(Alignment.TopEnd)) }
+      }
+      // The ⋮ on a "continue watching" card opens the same menu as a long press.
+      onMenu?.let { open ->
+        IconButton(
+          onClick = open,
+          modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 10.dp, end = 2.dp).size(32.dp),
+        ) {
+          Icon(ImageVector.vectorResource(R.drawable.ic_ms_more_vert), contentDescription = "Altre azioni", tint = Color.White)
+        }
+      }
+      item.progress?.let { p ->
+        LinearProgressIndicator(
+          progress = { p.coerceIn(0f, 1f) },
+          color = MaterialTheme.colorScheme.primary,
+          trackColor = Color.White.copy(alpha = 0.25f),
+          modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+        )
+      }
+    }
+    if (showLabel) {
+      Text(
+        text = item.seriesTitle ?: item.contentTitle ?: item.title,
+        style = MaterialTheme.typography.labelMedium,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(top = 6.dp),
+      )
+    }
+  }
+}
+
+/** Trending-row variant of [PosterCard]: a big, low-contrast numeral bleeds to the poster's left
+ *  — the "Top 10" treatment — instead of the small overlay digit this used to draw on the card
+ *  itself (that read as a generic badge, not a ranked chart). */
+@Composable
+fun RankedPosterCard(item: StreamItem, rank: Int, onClick: () -> Unit, modifier: Modifier = Modifier, width: Dp = POSTER_WIDTH, showLabel: Boolean = false) {
+  Box(modifier = modifier.width(width + 52.dp)) {
+    Text(
+      text = "$rank",
+      style = MaterialTheme.typography.displayLarge,
+      fontWeight = FontWeight.Black,
+      fontSize = 88.sp,
+      color = MaterialTheme.colorScheme.outline,
+      modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 4.dp),
+    )
+    PosterCard(item = item, onClick = onClick, width = width, showLabel = showLabel, showBadges = false, modifier = Modifier.align(Alignment.BottomEnd))
+  }
+}
+
+@Composable
+private fun CornerBadge(text: String, modifier: Modifier = Modifier) {
+  Text(
+    text = text,
+    style = MaterialTheme.typography.labelSmall,
+    color = Color.White,
+    maxLines = 1,
+    modifier =
+      modifier
+        .padding(4.dp)
+        .clip(RoundedCornerShape(4.dp))
+        .background(Color.Black.copy(alpha = 0.65f))
+        .padding(horizontal = 5.dp, vertical = 2.dp),
+  )
+}
+
+fun kindLabel(item: StreamItem): String? =
+  when (item.kind) {
+    ItemKind.SERIES -> "Serie TV"
+    ItemKind.MOVIE -> "Film"
+    else -> null
+  }
+
+/** A wide episode row — 16:9 still on the left, number + title + synopsis on the right. */
+@Composable
+fun EpisodeRow(item: StreamItem, onClick: () -> Unit, modifier: Modifier = Modifier) {
+  androidx.compose.foundation.layout.Row(
+    modifier = modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp),
+  ) {
+    Box(
+      modifier =
+        Modifier.width(150.dp)
+          .aspectRatio(16f / 9f)
+          .clip(RoundedCornerShape(8.dp))
+          .background(MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+      AsyncImage(
+        model = item.thumbnail,
+        contentDescription = item.title,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize(),
+      )
+      item.progress?.let { p ->
+        LinearProgressIndicator(
+          progress = { p.coerceIn(0f, 1f) },
+          color = MaterialTheme.colorScheme.primary,
+          trackColor = Color.White.copy(alpha = 0.25f),
+          modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+        )
+      }
+    }
+    Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+      Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+      item.plot?.takeIf { it.isNotBlank() }?.let {
+        Text(
+          it,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          maxLines = 3,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.padding(top = 4.dp),
+        )
+      }
+    }
+  }
+}
