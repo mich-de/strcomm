@@ -420,7 +420,10 @@ class StreamingCommunityChannel : Channel {
   private suspend fun fetchEmbedUrl(item: StreamItem): String? {
     val iframeUrl = iframeUrlFor(item) ?: return null
     val iframeHtml = runCatching { siteGet(iframeUrl) }.getOrElse { return null }
-    return Scrape.find1(iframeHtml, """(https://vixcloud\.co/embed/\d+\?[^"'\s]+)""").let { Scrape.unescape(it) }.takeIf { it.isNotBlank() }
+    return Scrape.find1(iframeHtml, """(https://[^"'\s]*vixcloud[^"'\s]*/embed/\d+\?[^"'\s]+)""")
+      .ifBlank { Scrape.find1(iframeHtml, """(?:src=["'])(https://[^"'\s]+/embed/\d+\?[^"'\s]+)""") }
+      .let { Scrape.unescape(it) }
+      .takeIf { it.isNotBlank() }
   }
 
   override suspend fun resolveEmbedUrl(item: StreamItem): String? = fetchEmbedUrl(item)
@@ -429,6 +432,7 @@ class StreamingCommunityChannel : Channel {
     val embedUrl = fetchEmbedUrl(item) ?: return emptyList()
 
     val hlsUrl = runCatching { resolveHlsUrl(embedUrl) }.getOrNull()
+    val embedOrigin = Scrape.find1(embedUrl, """(https://[^/]+)""").ifBlank { "https://vixcloud.cc" }
     // Every content field [item] carries (including whatever detail() enriched it with — genres,
     // cast, director, runtime, tmdbId, imdbId) is carried onto the PLAYABLE item so PlayerScreen's
     // info overlay has the full picture — title here becomes the source/server label
@@ -451,7 +455,7 @@ class StreamingCommunityChannel : Channel {
         // Native path: ExoPlayer plays the resolved .m3u8 directly. `extra` keeps the embed page
         // around so PlayerScreen can fall back to the WebView if the manifest fetch 403s in
         // practice on some client/network this wasn't verified against.
-        base.copy(url = hlsUrl, serverId = "hls", referer = "https://vixcloud.co/", extra = embedUrl)
+        base.copy(url = hlsUrl, serverId = "hls", referer = "$embedOrigin/", extra = embedUrl)
       } else {
         // Resolution failed (page shape changed, request errored, etc.) — fall back straight to
         // the WebView loading the embed page itself, same as before this was resolved further.

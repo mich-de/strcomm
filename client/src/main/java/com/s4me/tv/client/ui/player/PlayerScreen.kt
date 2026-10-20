@@ -1,5 +1,6 @@
 package com.s4me.tv.client.ui.player
 
+import com.s4me.tv.engine.Net
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.view.View
@@ -169,10 +170,10 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
       // Streams need the OkHttp + Referer HLS source; a local file plays through ExoPlayer's
       // default media source (content:// and file:// data sources, Matroska extractor) as-is.
       if (!isLocal) {
-        val okHttp = OkHttpClient.Builder().build()
         val dsFactory =
-          OkHttpDataSource.Factory(okHttp).setUserAgent(DESKTOP_UA).apply {
-            activeItem.referer?.let { setDefaultRequestProperties(mapOf("Referer" to it)) }
+          OkHttpDataSource.Factory(Net.client).setUserAgent(DESKTOP_UA).apply {
+            val ref = activeItem.referer ?: "https://vixcloud.cc/"
+            setDefaultRequestProperties(mapOf("Referer" to ref))
           }
         builder.setMediaSourceFactory(HlsMediaSource.Factory(dsFactory))
       }

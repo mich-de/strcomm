@@ -33,7 +33,8 @@ data class AvailableTracks(val audio: List<Pair<String, String?>>, val subtitles
 private suspend fun readAvailableTracks(source: StreamItem): AvailableTracks? =
   withContext(Dispatchers.IO) {
     runCatching {
-      val plan = HlsMkvDownloader(Net.client, mapOf("Referer" to (source.referer ?: "https://vixcloud.co/"))).plan(source.url)
+      val defaultReferer = if (source.url.contains("vixcloud")) "https://vixcloud.cc/" else "https://vixcloud.cc/"
+      val plan = HlsMkvDownloader(Net.client, mapOf("Referer" to (source.referer ?: defaultReferer))).plan(source.url)
       AvailableTracks(plan.audioTracks, plan.subtitleTracks)
     }.getOrNull()
   }

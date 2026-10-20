@@ -120,7 +120,7 @@ class DownloadWorker(context: Context, params: WorkerParameters) : CoroutineWork
     val playable =
       runCatching { channel.findVideos(item) }.getOrNull()?.firstOrNull { it.serverId == "hls" }
         ?: return failure(label, "Questo titolo non è scaricabile al momento")
-    val downloader = HlsMkvDownloader(Net.client, mapOf("Referer" to (playable.referer ?: "https://vixcloud.co/")))
+    val downloader = HlsMkvDownloader(Net.client, mapOf("Referer" to (playable.referer ?: "https://vixcloud.cc/")))
     val plan =
       try {
         downloader.plan(playable.url)

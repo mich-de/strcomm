@@ -297,7 +297,7 @@ private fun NativeHlsPlayer(
       val dataSourceFactory =
         OkHttpDataSource.Factory(Net.client)
           .setUserAgent(DESKTOP_UA)
-          .setDefaultRequestProperties(mapOf("Referer" to (item.referer ?: "https://vixcloud.co/")))
+          .setDefaultRequestProperties(mapOf("Referer" to (item.referer ?: "https://vixcloud.cc/")))
       val mediaSource = HlsMediaSource.Factory(dataSourceFactory).createMediaSource(MediaItem.fromUri(item.url))
       ExoPlayer.Builder(context).build().apply {
         // Italian audio + Italian subtitles as the language preference (mirrors :client); the
