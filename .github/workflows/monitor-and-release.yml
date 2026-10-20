@@ -1,0 +1,131 @@
+name: Monitor & Auto-Release
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Forza la compilazione di una nuova versione di rilascio'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Health check & Domain inspection
+        id: health_check
+        run: |
+          python3 .github/scripts/check_stream_health.py
+
+      - name: Handle health check failure
+        if: failure() || steps.health_check.outputs.check_failed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const errorMsg = "${{ steps.health_check.outputs.error_message || 'Controllo fonti o catalogo fallito' }}";
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Alert] Fallito controllo streaming / fonti (${new Date().toISOString().slice(0, 10)})`,
+              body: `⚠️ **Attenzione:** Il controllo automatico delle fonti video o del catalogo ha riscontrato un problema:\n\n> ${errorMsg}\n\nVerificare lo stato di StreamingCommunity e del provider video (vixcloud).`,
+              labels: ['alert', 'stream-health']
+            });
+
+      - name: Setup JDK 17
+        if: steps.health_check.outputs.needs_update == 'true' || inputs.force_build == true
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        if: steps.health_check.outputs.needs_update == 'true' || inputs.force_build == true
+        uses: android-actions/setup-android@v3
+
+      - name: Restore Keystore & Configuration
+        if: steps.health_check.outputs.needs_update == 'true' || inputs.force_build == true
+        run: |
+          mkdir -p keystore
+          echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > keystore/strcomm-release.jks
+          echo "${{ secrets.KEYSTORE_PROPERTIES }}" > keystore.properties
+
+      - name: Build Release APKs
+        if: steps.health_check.outputs.needs_update == 'true' || inputs.force_build == true
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease :client:assembleRelease :mobile:assembleRelease --no-daemon
+
+      - name: Prepare Release Assets
+        if: steps.health_check.outputs.needs_update == 'true' || inputs.force_build == true
+        id: prepare_assets
+        run: |
+          VERSION="${{ steps.health_check.outputs.new_version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(grep -m 1 'versionName' app/build.gradle.kts | cut -d '"' -f2)
+          fi
+          echo "tag_name=v${VERSION}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+          cp app/build/outputs/apk/release/app-release.apk "StrComm-TVBox-FireStick-v${VERSION}.apk"
+          cp client/build/outputs/apk/release/client-release.apk "StrComm-Mobile-Tablet-v${VERSION}.apk"
+          cp mobile/build/outputs/apk/release/mobile-release.apk "StrComm-Remote-v${VERSION}.apk"
+
+      - name: Commit & Push Code Updates
+        if: steps.health_check.outputs.needs_update == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add engine/ app/ client/ mobile/ CLAUDE.md
+          git commit -m "Auto-update domain & bump to ${{ steps.prepare_assets.outputs.version }} [skip ci]"
+          git push origin main
+
+      - name: Publish GitHub Release
+        if: steps.health_check.outputs.needs_update == 'true' || inputs.force_build == true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.prepare_assets.outputs.tag_name }}"
+          VERSION="${{ steps.prepare_assets.outputs.version }}"
+          REASON="${{ steps.health_check.outputs.reason || 'Nuova compilazione release automatizzata' }}"
+
+          gh release create "$TAG" \
+            "StrComm-TVBox-FireStick-v${VERSION}.apk" \
+            "StrComm-Mobile-Tablet-v${VERSION}.apk" \
+            "StrComm-Remote-v${VERSION}.apk" \
+            --title "StrComm ${VERSION}" \
+            --notes "Aggiornamento automatico: ${REASON}."
+
+      - name: Notify Release Created
+        if: steps.health_check.outputs.needs_update == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = "${{ steps.prepare_assets.outputs.version }}";
+            const reason = "${{ steps.health_check.outputs.reason }}";
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Auto-Update] Rilasciata versione ${version}`,
+              body: `🚀 **Nuova release rilasciata con successo!**\n\n- **Versione:** \`${version}\`\n- **Motivo:** ${reason}\n- **Release:** https://github.com/${context.repo.owner}/${context.repo.repo}/releases/tag/v${version}\n\nGli APK firmati sono disponibili per il download e aggiornamento OTA.`,
+              labels: ['auto-release']
+            });
