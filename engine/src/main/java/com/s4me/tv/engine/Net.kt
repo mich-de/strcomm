@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Cache
+import okhttp3.ConnectionPool
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.Dns
@@ -70,22 +71,31 @@ object ResilientDns : Dns {
   private val dohClient by lazy {
     OkHttpClient.Builder()
       .dns(Dns.SYSTEM)
-      .connectTimeout(4, TimeUnit.SECONDS)
-      .readTimeout(4, TimeUnit.SECONDS)
+      .connectionPool(ConnectionPool(5, 10, TimeUnit.MINUTES))
+      .connectTimeout(3, TimeUnit.SECONDS)
+      .readTimeout(3, TimeUnit.SECONDS)
       .build()
   }
 
   private val cache = ConcurrentHashMap<String, Pair<List<InetAddress>, Long>>()
 
-  private fun isStreamingHost(hostname: String): Boolean {
+  private fun isFastDohHost(hostname: String): Boolean {
     val h = hostname.lowercase()
     return h.contains("streamingcommunity") ||
       h.contains("vixcloud") ||
       h.contains("vix-content") ||
       h.contains("solargecko") ||
+      h.contains("tmdb.org") ||
+      h.contains("themoviedb.org") ||
+      h.contains("media-amazon.com") ||
+      h.contains("imdb.com") ||
+      h.contains("metahub.space") ||
       h.endsWith(".boats") ||
       h.endsWith(".build") ||
-      h.endsWith(".cc")
+      h.endsWith(".cc") ||
+      h.endsWith(".co") ||
+      h.contains("delivery") ||
+      h.contains("cdn")
   }
 
   override fun lookup(hostname: String): List<InetAddress> {
@@ -94,12 +104,12 @@ object ResilientDns : Dns {
       return cached.first
     }
 
-    // For known streaming/CDN domains blocked or filtered by Italian ISPs or OEM DNS,
+    // For known streaming/CDN and image domains blocked or filtered by Italian ISPs or OEM DNS,
     // query DoH directly without waiting on multi-second system DNS timeouts.
-    if (isStreamingHost(hostname)) {
+    if (isFastDohHost(hostname)) {
       val doh = queryDoh(hostname)
       if (doh != null && doh.isNotEmpty()) {
-        cache[hostname] = doh to (System.currentTimeMillis() + 3_600_000L)
+        cache[hostname] = doh to (System.currentTimeMillis() + 86_400_000L)
         return doh
       }
     }
@@ -107,14 +117,14 @@ object ResilientDns : Dns {
     try {
       val systemAddrs = Dns.SYSTEM.lookup(hostname)
       if (systemAddrs.isNotEmpty()) {
-        cache[hostname] = systemAddrs to (System.currentTimeMillis() + 3_600_000L)
+        cache[hostname] = systemAddrs to (System.currentTimeMillis() + 86_400_000L)
         return systemAddrs
       }
     } catch (_: Exception) {}
 
     val dohAddrs = queryDoh(hostname)
     if (dohAddrs != null && dohAddrs.isNotEmpty()) {
-      cache[hostname] = dohAddrs to (System.currentTimeMillis() + 3_600_000L)
+      cache[hostname] = dohAddrs to (System.currentTimeMillis() + 86_400_000L)
       return dohAddrs
     }
 
@@ -164,6 +174,18 @@ object Net {
       .readTimeout(20, TimeUnit.SECONDS)
       .followRedirects(true)
       .followSslRedirects(true)
+      .build()
+
+  /** Dedicated OkHttp client for video streaming (ExoPlayer). Independent connection pool so video requests never contend with scraping or images. */
+  val streamingClient: OkHttpClient =
+    OkHttpClient.Builder()
+      .dns(ResilientDns)
+      .connectionPool(ConnectionPool(16, 5, TimeUnit.MINUTES))
+      .connectTimeout(15, TimeUnit.SECONDS)
+      .readTimeout(30, TimeUnit.SECONDS)
+      .followRedirects(true)
+      .followSslRedirects(true)
+      .retryOnConnectionFailure(true)
       .build()
 
   /** Dedicated OkHttp client with a 200MB persistent disk cache for posters & covers. */

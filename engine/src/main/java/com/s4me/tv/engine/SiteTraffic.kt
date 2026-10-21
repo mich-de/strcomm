@@ -35,8 +35,8 @@ object SiteTraffic {
     object Key : CoroutineContext.Key<Background>
   }
 
-  private const val MAX_IN_FLIGHT = 2
-  private const val INTERACTIVE_SPACING_MS = 500L
+  private const val MAX_IN_FLIGHT = 3
+  private const val INTERACTIVE_SPACING_MS = 250L
   private const val BACKGROUND_GAP_MS = 1_500L
 
   private val inFlight = Semaphore(MAX_IN_FLIGHT)

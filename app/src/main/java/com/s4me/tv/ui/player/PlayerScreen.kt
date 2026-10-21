@@ -63,8 +63,10 @@ import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
@@ -295,22 +297,34 @@ private fun NativeHlsPlayer(
       // though the manifest is perfectly fetchable via OkHttp; routing playback through OkHttp keeps
       // it on the native player (which renders fine) instead of forcing the WebView fallback (which
       // can't composite video on this box's weak GPU). This is the fix for "il video non parte".
+      val bandwidthMeter = DefaultBandwidthMeter.getSingletonInstance(context)
       val dataSourceFactory =
-        OkHttpDataSource.Factory(Net.client)
+        OkHttpDataSource.Factory(Net.streamingClient)
           .setUserAgent(DESKTOP_UA)
           .setDefaultRequestProperties(mapOf("Referer" to (item.referer ?: "https://vixcloud.cc/")))
-      val mediaSource = HlsMediaSource.Factory(dataSourceFactory).createMediaSource(MediaItem.fromUri(item.url))
+          .setTransferListener(bandwidthMeter)
+      val mediaSource =
+        HlsMediaSource.Factory(dataSourceFactory)
+          .createMediaSource(MediaItem.fromUri(item.url))
       val loadControl =
         DefaultLoadControl.Builder()
           .setBufferDurationsMs(
-            /* minBufferMs = */ 15_000,
-            /* maxBufferMs = */ 50_000,
-            /* bufferForPlaybackMs = */ 1_000,
-            /* bufferForPlaybackAfterRebufferMs = */ 2_000,
+            /* minBufferMs = */ 20_000,
+            /* maxBufferMs = */ 60_000,
+            /* bufferForPlaybackMs = */ 1_500,
+            /* bufferForPlaybackAfterRebufferMs = */ 5_000,
           )
+          .setBackBuffer(30_000, /* retainBackBufferFromKeyframe = */ true)
           .setPrioritizeTimeOverSizeThresholds(true)
           .build()
-      ExoPlayer.Builder(context).setLoadControl(loadControl).build().apply {
+      val renderersFactory =
+        DefaultRenderersFactory(context)
+          .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+          .setEnableDecoderFallback(true)
+      ExoPlayer.Builder(context, renderersFactory)
+        .setLoadControl(loadControl)
+        .setBandwidthMeter(bandwidthMeter)
+        .build().apply {
         // Italian audio + Italian subtitles as the language preference (mirrors :client); the
         // forced-subtitle auto-pick below then narrows the subtitle choice to a forced track when
         // one exists — subtitles otherwise default off (see TracksMenu's "Disattivati").
@@ -635,6 +649,40 @@ private fun TracksMenu(exoPlayer: ExoPlayer, onClose: () -> Unit, modifier: Modi
         }
       }
 
+      val videoGroups = remember(tracks) { tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO && it.isSupported } }
+      val videoTrackGroup = videoGroups.firstOrNull()
+      val isVideoAuto = videoTrackGroup == null || !exoPlayer.trackSelectionParameters.overrides.containsKey(videoTrackGroup.mediaTrackGroup)
+      if (videoTrackGroup != null && videoTrackGroup.length > 1) {
+        Text(text = "Qualità Video", style = MaterialTheme.typography.titleMedium, color = Color.White, modifier = Modifier.padding(top = 10.dp))
+        Button(
+          onClick = {
+            exoPlayer.trackSelectionParameters =
+              exoPlayer.trackSelectionParameters.buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+                .build()
+            onClose()
+          }
+        ) {
+          if (isVideoAuto) { Symbol(R.drawable.ic_ms_check, size = ButtonDefaults.IconSize); Spacer(Modifier.width(ButtonDefaults.IconSpacing)) }
+          Text("Automatica (adattiva)")
+        }
+        for (i in 0 until videoTrackGroup.length) {
+          val format = videoTrackGroup.getTrackFormat(i)
+          val h = format.height
+          val kbps = if (format.bitrate > 0) " (${format.bitrate / 1000}k)" else ""
+          val isSelected = !isVideoAuto && videoTrackGroup.isTrackSelected(i)
+          Button(
+            onClick = {
+              applyTrackOverride(exoPlayer, videoTrackGroup, trackIndex = i)
+              onClose()
+            }
+          ) {
+            if (isSelected) { Symbol(R.drawable.ic_ms_check, size = ButtonDefaults.IconSize); Spacer(Modifier.width(ButtonDefaults.IconSpacing)) }
+            Text("${h}p$kbps")
+          }
+        }
+      }
+
       Text(
         text = "INDIETRO per chiudere",
         style = MaterialTheme.typography.labelSmall,
@@ -686,25 +734,29 @@ private fun selectForcedSubtitle(player: ExoPlayer, tracks: Tracks): Tracks.Grou
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
       .setOverrideForType(TrackSelectionOverride(pick.mediaTrackGroup, 0))
       .build()
-  flushAfterTrackChange(player)
   return pick
 }
 
-private fun applyTrackOverride(player: ExoPlayer, group: Tracks.Group) {
+private fun applyTrackOverride(player: ExoPlayer, group: Tracks.Group, trackIndex: Int = 0) {
   player.trackSelectionParameters =
     player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(group.type, false)
-      .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
+      .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
       .build()
-  flushAfterTrackChange(player)
+  if (group.type != C.TRACK_TYPE_TEXT) {
+    flushAfterTrackChange(player)
+  }
 }
 
 /** A same-position seek right after a track change: on this box's fragile decoder a mid-stream
  *  track reselection stalls the video pipeline (frozen/corrupted frames, audio marching on, no
- *  error raised) — the seek flushes the renderers and restarts them cleanly. */
+ *  error raised) — the seek flushes the renderers and restarts them cleanly. Only flush during
+ *  active playback (>1s) so startup buffering is never interrupted. */
 private fun flushAfterTrackChange(player: ExoPlayer) {
-  player.seekTo(player.currentPosition)
+  if (player.currentPosition > 1000L) {
+    player.seekTo(player.currentPosition)
+  }
 }
 
 @SuppressLint("SetJavaScriptEnabled")

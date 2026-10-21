@@ -69,6 +69,20 @@ class HlsDownloadResult(val bytesWritten: Long, val audioTracks: Int, val subtit
  * has moved past them, so the only disk space needed is the finished file itself.
  */
 class HlsMkvDownloader(private val http: OkHttpClient, private val headers: Map<String, String> = emptyMap()) {
+  /**
+   * Fast track inspection: fetches only the master playlist and parses audio/subtitle renditions
+   * without downloading media playlists. Used by the title details screen.
+   */
+  suspend fun inspectTracks(masterUrl: String): Pair<List<Pair<String, String?>>, List<Pair<String, String?>>> =
+    withContext(Dispatchers.IO) {
+      val masterText = fetchText(masterUrl)
+      if (!HlsPlaylistParser.isMultivariant(masterText)) return@withContext emptyList<Pair<String, String?>>() to emptyList()
+      val master = HlsPlaylistParser.parseMultivariant(masterText, masterUrl)
+      val audio = master.renditions.filter { it.type == "AUDIO" }.map { it.name to it.language }.distinct()
+      val subs = master.renditions.filter { it.type == "SUBTITLES" }.map { it.name to it.language }.distinct()
+      audio to subs
+    }
+
   suspend fun plan(masterUrl: String): HlsDownloadPlan =
     withContext(Dispatchers.IO) {
       val masterText = fetchText(masterUrl)

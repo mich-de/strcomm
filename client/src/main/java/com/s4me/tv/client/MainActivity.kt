@@ -18,6 +18,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.annotation.ExperimentalCoilApi
+import coil3.disk.DiskCache
+import coil3.disk.directory
+import coil3.memory.MemoryCache
 import coil3.network.ConnectivityChecker
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
@@ -59,11 +62,22 @@ class MainActivity : ComponentActivity() {
 
     SingletonImageLoader.setSafe { context ->
       ImageLoader.Builder(context)
+        .memoryCache {
+          MemoryCache.Builder()
+            .maxSizePercent(context, 0.25)
+            .build()
+        }
+        .diskCache {
+          DiskCache.Builder()
+            .directory(context.cacheDir.resolve("image_cache"))
+            .maxSizeBytes(250L * 1024 * 1024)
+            .build()
+        }
         .components {
           add(OkHttpNetworkFetcherFactory(callFactory = { Net.imageClient(context) }, connectivityChecker = { ConnectivityChecker.ONLINE }))
         }
         .crossfade(true)
-        .crossfade(200)
+        .crossfade(150)
         .build()
     }
 

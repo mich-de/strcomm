@@ -79,23 +79,25 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
    *  burst that got every address this app used banned by the site (see SiteTraffic, which paces
    *  them now) — a prolific actor loses a few titles past the cap. */
   private suspend fun verifyCredited(candidates: List<StreamItem>, personName: String): List<StreamItem> =
-    coroutineScope {
-      candidates
-        .filter { it.kind == ItemKind.MOVIE || it.kind == ItemKind.SERIES }
-        .take(30)
-        .map { item ->
-          async {
-            val channel = ChannelRegistry.byId(item.channelId) ?: return@async null
-            val detail = runCatching { channel.detail(item, withRatings = false) }.getOrNull() ?: return@async null
-            val credited =
-              listOfNotNull(detail.cast, detail.director)
-                .flatMap { it.split(", ") }
-                .any { it.equals(personName, ignoreCase = true) }
-            item.takeIf { credited }
+    withContext(SiteTraffic.Background) {
+      coroutineScope {
+        candidates
+          .filter { it.kind == ItemKind.MOVIE || it.kind == ItemKind.SERIES }
+          .take(30)
+          .map { item ->
+            async {
+              val channel = ChannelRegistry.byId(item.channelId) ?: return@async null
+              val detail = runCatching { channel.detail(item, withRatings = false) }.getOrNull() ?: return@async null
+              val credited =
+                listOfNotNull(detail.cast, detail.director)
+                  .flatMap { it.split(", ") }
+                  .any { it.equals(personName, ignoreCase = true) }
+              item.takeIf { credited }
+            }
           }
-        }
-        .awaitAll()
-        .filterNotNull()
+          .awaitAll()
+          .filterNotNull()
+      }
     }
 
   fun clearHistory() {

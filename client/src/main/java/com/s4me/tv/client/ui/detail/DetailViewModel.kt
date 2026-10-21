@@ -51,8 +51,8 @@ private suspend fun readAvailableTracks(source: StreamItem): AvailableTracks? =
   withContext(Dispatchers.IO) {
     runCatching {
       val defaultReferer = if (source.url.contains("vixcloud")) "https://vixcloud.cc/" else "https://vixcloud.cc/"
-      val plan = HlsMkvDownloader(Net.client, mapOf("Referer" to (source.referer ?: defaultReferer))).plan(source.url)
-      AvailableTracks(plan.audioTracks, plan.subtitleTracks)
+      val (audio, subs) = HlsMkvDownloader(Net.client, mapOf("Referer" to (source.referer ?: defaultReferer))).inspectTracks(source.url)
+      AvailableTracks(audio, subs)
     }.getOrNull()
   }
 
@@ -108,7 +108,7 @@ class DetailViewModel(private val item: StreamItem) : ViewModel() {
 
       val enriched = detailDeferred.await()
       _preview.value = enriched
-      launch { _related.value = runCatching { channel.collection(enriched) }.getOrDefault(emptyList()) }
+      launch { _related.value = withContext(SiteTraffic.Background) { runCatching { channel.collection(enriched) }.getOrDefault(emptyList()) } }
       launch { _similar.value = withContext(SiteTraffic.Background) { runCatching { similarTo(channel, enriched) }.getOrDefault(emptyList()) } }
 
       val current = _uiState.value

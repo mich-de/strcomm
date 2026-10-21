@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.s4me.tv.engine.ChannelRegistry
 import com.s4me.tv.engine.Net
+import com.s4me.tv.engine.SiteTraffic
 import com.s4me.tv.engine.StreamItem
 import com.s4me.tv.engine.download.HlsMkvDownloader
 import kotlinx.coroutines.Dispatchers
@@ -35,8 +36,8 @@ private suspend fun readAvailableTracks(source: StreamItem): AvailableTracks? =
   withContext(Dispatchers.IO) {
     runCatching {
       val defaultReferer = if (source.url.contains("vixcloud")) "https://vixcloud.cc/" else "https://vixcloud.cc/"
-      val plan = HlsMkvDownloader(Net.client, mapOf("Referer" to (source.referer ?: defaultReferer))).plan(source.url)
-      AvailableTracks(plan.audioTracks, plan.subtitleTracks)
+      val (audio, subs) = HlsMkvDownloader(Net.client, mapOf("Referer" to (source.referer ?: defaultReferer))).inspectTracks(source.url)
+      AvailableTracks(audio, subs)
     }.getOrNull()
   }
 
@@ -76,7 +77,7 @@ class DetailViewModel(private val item: StreamItem) : ViewModel() {
       }
 
       val enriched = detailDeferred.await()
-      launch { _related.value = runCatching { channel.collection(enriched) }.getOrDefault(emptyList()) }
+      launch { _related.value = withContext(SiteTraffic.Background) { runCatching { channel.collection(enriched) }.getOrDefault(emptyList()) } }
       val current = _uiState.value
       if (current is DetailUiState.Success) {
         _uiState.value = DetailUiState.Success(enriched, current.sources)

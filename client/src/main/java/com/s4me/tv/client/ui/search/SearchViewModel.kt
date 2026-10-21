@@ -95,26 +95,27 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
    *  capped at [MAX_VERIFIED]: it used to verify up to 120 (8 at a time, plus a retry each), a burst
    *  of the kind that got every address this app used banned by the site (see SiteTraffic, which
    *  now paces them). Some of a very prolific actor's films sit past the cap and are left out. */
-  private suspend fun verifyCredited(candidates: List<StreamItem>, personName: String): List<StreamItem> {
-    val target = personName.trim().lowercase().replace(WHITESPACE, " ")
-    return coroutineScope {
-      candidates
-        .filter { it.kind == ItemKind.MOVIE || it.kind == ItemKind.SERIES }
-        .distinctBy { it.url }
-        .take(MAX_VERIFIED)
-        .map { item ->
-          async(Dispatchers.IO) {
-            val channel = ChannelRegistry.byId(item.channelId) ?: return@async null
-            val detail = runCatching { channel.detail(item, withRatings = false) }.getOrNull() ?: return@async null
-            val credits = listOfNotNull(detail.cast, detail.director).joinToString(", ").lowercase().replace(WHITESPACE, " ")
-            val credited = credits.split(", ").any { it.trim() == target } || credits.contains(target)
-            item.takeIf { credited }
+  private suspend fun verifyCredited(candidates: List<StreamItem>, personName: String): List<StreamItem> =
+    withContext(SiteTraffic.Background) {
+      val target = personName.trim().lowercase().replace(WHITESPACE, " ")
+      coroutineScope {
+        candidates
+          .filter { it.kind == ItemKind.MOVIE || it.kind == ItemKind.SERIES }
+          .distinctBy { it.url }
+          .take(MAX_VERIFIED)
+          .map { item ->
+            async(Dispatchers.IO) {
+              val channel = ChannelRegistry.byId(item.channelId) ?: return@async null
+              val detail = runCatching { channel.detail(item, withRatings = false) }.getOrNull() ?: return@async null
+              val credits = listOfNotNull(detail.cast, detail.director).joinToString(", ").lowercase().replace(WHITESPACE, " ")
+              val credited = credits.split(", ").any { it.trim() == target } || credits.contains(target)
+              item.takeIf { credited }
+            }
           }
-        }
-        .awaitAll()
-        .filterNotNull()
+          .awaitAll()
+          .filterNotNull()
+      }
     }
-  }
 
   private companion object {
     const val MAX_VERIFIED = 30

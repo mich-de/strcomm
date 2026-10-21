@@ -23,6 +23,7 @@ import kotlin.math.abs
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -419,7 +420,11 @@ class StreamingCommunityChannel : Channel {
    *  lives only ~20s, so callers must use the result immediately. */
   private suspend fun fetchEmbedUrl(item: StreamItem): String? {
     val iframeUrl = iframeUrlFor(item) ?: return null
-    val iframeHtml = runCatching { siteGet(iframeUrl) }.getOrElse { return null }
+    var iframeHtml = runCatching { siteGet(iframeUrl) }.getOrNull()
+    if (iframeHtml == null) {
+      delay(300)
+      iframeHtml = runCatching { siteGet(iframeUrl) }.getOrNull() ?: return null
+    }
     return Scrape.find1(iframeHtml, """(https://[^"'\s]*vixcloud[^"'\s]*/embed/\d+\?[^"'\s]+)""")
       .ifBlank { Scrape.find1(iframeHtml, """(?:src=["'])(https://[^"'\s]+/embed/\d+\?[^"'\s]+)""") }
       .let { Scrape.unescape(it) }
@@ -471,7 +476,11 @@ class StreamingCommunityChannel : Channel {
    * as the iframe step above.
    */
   private suspend fun resolveHlsUrl(embedUrl: String): String? {
-    val embedHtml = Net.get(embedUrl, referer = host)
+    var embedHtml = runCatching { Net.get(embedUrl, referer = host) }.getOrNull()
+    if (embedHtml == null) {
+      delay(300)
+      embedHtml = runCatching { Net.get(embedUrl, referer = host) }.getOrNull() ?: return null
+    }
     val playlistUrl = Scrape.find1(embedHtml, """url:\s*'([^']+)'""")
     val token = Scrape.find1(embedHtml, """'token':\s*'([^']+)'""")
     val expires = Scrape.find1(embedHtml, """'expires':\s*'([^']+)'""")

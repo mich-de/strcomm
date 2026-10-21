@@ -88,8 +88,10 @@ import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
@@ -167,25 +169,37 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
 
   val exoPlayer =
     remember(activeItem.url) {
+      val bandwidthMeter = DefaultBandwidthMeter.getSingletonInstance(context)
       val loadControl =
         DefaultLoadControl.Builder()
           .setBufferDurationsMs(
-            /* minBufferMs = */ 15_000,
-            /* maxBufferMs = */ 50_000,
-            /* bufferForPlaybackMs = */ 1_000,
-            /* bufferForPlaybackAfterRebufferMs = */ 2_000,
+            /* minBufferMs = */ 20_000,
+            /* maxBufferMs = */ 60_000,
+            /* bufferForPlaybackMs = */ 1_500,
+            /* bufferForPlaybackAfterRebufferMs = */ 5_000,
           )
+          .setBackBuffer(30_000, /* retainBackBufferFromKeyframe = */ true)
           .setPrioritizeTimeOverSizeThresholds(true)
           .build()
-      val builder = ExoPlayer.Builder(context).setLoadControl(loadControl)
+      val renderersFactory =
+        DefaultRenderersFactory(context)
+          .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+          .setEnableDecoderFallback(true)
+      val builder =
+        ExoPlayer.Builder(context, renderersFactory)
+          .setLoadControl(loadControl)
+          .setBandwidthMeter(bandwidthMeter)
       // Streams need the OkHttp + Referer HLS source; a local file plays through ExoPlayer's
       // default media source (content:// and file:// data sources, Matroska extractor) as-is.
       if (!isLocal) {
         val dsFactory =
-          OkHttpDataSource.Factory(Net.client).setUserAgent(DESKTOP_UA).apply {
-            val ref = activeItem.referer ?: "https://vixcloud.cc/"
-            setDefaultRequestProperties(mapOf("Referer" to ref))
-          }
+          OkHttpDataSource.Factory(Net.streamingClient)
+            .setUserAgent(DESKTOP_UA)
+            .setTransferListener(bandwidthMeter)
+            .apply {
+              val ref = activeItem.referer ?: "https://vixcloud.cc/"
+              setDefaultRequestProperties(mapOf("Referer" to ref))
+            }
         builder.setMediaSourceFactory(HlsMediaSource.Factory(dsFactory))
       }
       val mediaItem =
@@ -296,6 +310,7 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
           WatchStatsStore(context).recordIfCompleted(origin, pos, dur)
         }
       }
+      playerView?.player = null
       exoPlayer.removeListener(listener)
       exoPlayer.release()
     }
@@ -883,7 +898,6 @@ private fun TrackSheet(exoPlayer: ExoPlayer, tracks: Tracks, onDone: () -> Unit,
       TrackLine(label = "Disattivati", selected = textOff) {
         exoPlayer.trackSelectionParameters =
           exoPlayer.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_TEXT).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
-        exoPlayer.seekTo(exoPlayer.currentPosition)
         onDone()
       }
       text.forEach { g ->
@@ -894,6 +908,28 @@ private fun TrackSheet(exoPlayer: ExoPlayer, tracks: Tracks, onDone: () -> Unit,
           languageCode = g.getTrackFormat(0).language,
         ) {
           applyOverride(exoPlayer, g)
+          onDone()
+        }
+      }
+    }
+
+    val videoGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_VIDEO && it.isSupported }
+    val videoTrackGroup = videoGroups.firstOrNull()
+    val isVideoAuto = videoTrackGroup == null || !exoPlayer.trackSelectionParameters.overrides.containsKey(videoTrackGroup.mediaTrackGroup)
+    if (videoTrackGroup != null && videoTrackGroup.length > 1) {
+      Text("Qualità Video", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 12.dp))
+      TrackLine(label = "Automatica (adattiva)", selected = isVideoAuto) {
+        exoPlayer.trackSelectionParameters =
+          exoPlayer.trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_VIDEO).build()
+        onDone()
+      }
+      for (i in 0 until videoTrackGroup.length) {
+        val format = videoTrackGroup.getTrackFormat(i)
+        val h = format.height
+        val kbps = if (format.bitrate > 0) " (${format.bitrate / 1000}k)" else ""
+        val isSelected = !isVideoAuto && videoTrackGroup.isTrackSelected(i)
+        TrackLine(label = "${h}p$kbps", selected = isSelected) {
+          applyOverride(exoPlayer, videoTrackGroup, trackIndex = i)
           onDone()
         }
       }
@@ -1000,18 +1036,19 @@ private fun selectForcedSubtitle(player: ExoPlayer, tracks: Tracks): Tracks.Grou
       .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
       .setOverrideForType(TrackSelectionOverride(pick.mediaTrackGroup, 0))
       .build()
-  player.seekTo(player.currentPosition)
   return pick
 }
 
-private fun applyOverride(player: ExoPlayer, group: Tracks.Group) {
+private fun applyOverride(player: ExoPlayer, group: Tracks.Group, trackIndex: Int = 0) {
   player.trackSelectionParameters =
     player.trackSelectionParameters
       .buildUpon()
       .setTrackTypeDisabled(group.type, false)
-      .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, 0))
+      .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, trackIndex))
       .build()
-  player.seekTo(player.currentPosition)
+  if (player.currentPosition > 1000L && group.type != C.TRACK_TYPE_TEXT) {
+    player.seekTo(player.currentPosition)
+  }
 }
 
 private fun trackDisplayName(group: Tracks.Group): String {
