@@ -481,9 +481,10 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
       },
     )
 
-    if (isBuffering && !locked) {
-      CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.align(Alignment.Center).size(44.dp))
-    }
+    VideoBufferingOverlay(
+      item = activeItem,
+      visible = isBuffering && !locked,
+    )
 
     seekFlash?.let { flash ->
       SeekFlashBubble(

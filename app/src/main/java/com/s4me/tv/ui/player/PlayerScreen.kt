@@ -87,6 +87,7 @@ import com.s4me.tv.remote.PlaybackStatus
 import com.s4me.tv.ui.components.LanguageFlag
 import com.s4me.tv.ui.components.LoadingIndicator
 import com.s4me.tv.ui.components.Symbol
+import com.s4me.tv.ui.components.VideoBufferingOverlay
 import java.io.ByteArrayInputStream
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -261,6 +262,7 @@ private fun NativeHlsPlayer(
   var infoRequestId by remember(item.url) { mutableStateOf(0) }
   var showHint by remember(item.url) { mutableStateOf(true) }
   var feedback by remember(item.url) { mutableStateOf<String?>(null) }
+  var isBuffering by remember(item.url) { mutableStateOf(true) }
   var positionMs by remember(item.url) { mutableStateOf(0L) }
   var durationMs by remember(item.url) { mutableStateOf(0L) }
   var videoInfo by remember(item.url) { mutableStateOf<String?>(null) }
@@ -338,6 +340,7 @@ private fun NativeHlsPlayer(
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+              isBuffering = playbackState == Player.STATE_BUFFERING
               if (playbackState == Player.STATE_ENDED) onEnded()
             }
 
@@ -550,6 +553,10 @@ private fun NativeHlsPlayer(
         modifier = Modifier.align(Alignment.TopStart),
       )
     }
+    VideoBufferingOverlay(
+      item = item,
+      visible = isBuffering && exoPlayer.playWhenReady,
+    )
     feedback?.let { PlaybackFeedback(text = it, modifier = Modifier.align(Alignment.Center)) }
     if (showHint && !showInfo) {
       Text(
@@ -802,9 +809,7 @@ private fun WebViewPlayer(item: StreamItem, originItem: StreamItem?, modifier: M
 
   val pageUrl = resolvedUrl
   if (pageUrl == null) {
-    Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
-      LoadingIndicator(modifier = Modifier.align(Alignment.Center), label = "Preparo il video…")
-    }
+    VideoBufferingOverlay(item = item, visible = true, modifier = modifier)
     return
   }
 
