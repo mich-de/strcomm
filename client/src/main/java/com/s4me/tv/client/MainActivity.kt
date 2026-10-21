@@ -17,7 +17,11 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
+import coil3.annotation.ExperimentalCoilApi
+import coil3.network.ConnectivityChecker
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import com.s4me.tv.engine.Net
 import com.s4me.tv.client.notifications.AvailabilityWorker
 import com.s4me.tv.client.notifications.NewReleaseWorker
 import com.s4me.tv.client.player.PipController
@@ -34,6 +38,7 @@ import com.s4me.tv.engine.ProfileScope
 import com.s4me.tv.engine.Tmdb
 import com.s4me.tv.engine.TmdbApiKeyStore
 
+@OptIn(ExperimentalCoilApi::class)
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
@@ -52,7 +57,15 @@ class MainActivity : ComponentActivity() {
       ProgressSyncWorker.syncNow(this)
     }
 
-    SingletonImageLoader.setSafe { context -> ImageLoader.Builder(context).crossfade(true).crossfade(200).build() }
+    SingletonImageLoader.setSafe { context ->
+      ImageLoader.Builder(context)
+        .components {
+          add(OkHttpNetworkFetcherFactory(callFactory = { Net.imageClient(context) }, connectivityChecker = { ConnectivityChecker.ONLINE }))
+        }
+        .crossfade(true)
+        .crossfade(200)
+        .build()
+    }
 
     setContent {
       val mode by ThemePreference.mode.collectAsStateWithLifecycle()

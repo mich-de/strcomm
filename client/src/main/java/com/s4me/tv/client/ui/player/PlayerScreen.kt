@@ -87,6 +87,7 @@ import androidx.media3.common.text.Cue
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -166,7 +167,17 @@ fun PlayerScreen(item: StreamItem, onBack: () -> Unit, modifier: Modifier = Modi
 
   val exoPlayer =
     remember(activeItem.url) {
-      val builder = ExoPlayer.Builder(context)
+      val loadControl =
+        DefaultLoadControl.Builder()
+          .setBufferDurationsMs(
+            /* minBufferMs = */ 15_000,
+            /* maxBufferMs = */ 50_000,
+            /* bufferForPlaybackMs = */ 1_000,
+            /* bufferForPlaybackAfterRebufferMs = */ 2_000,
+          )
+          .setPrioritizeTimeOverSizeThresholds(true)
+          .build()
+      val builder = ExoPlayer.Builder(context).setLoadControl(loadControl)
       // Streams need the OkHttp + Referer HLS source; a local file plays through ExoPlayer's
       // default media source (content:// and file:// data sources, Matroska extractor) as-is.
       if (!isLocal) {

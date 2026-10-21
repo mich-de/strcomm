@@ -1,5 +1,7 @@
 package com.s4me.tv.engine
 
+import android.content.Context
+import java.io.File
 import java.io.IOException
 import java.net.InetAddress
 import java.net.UnknownHostException
@@ -7,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Cache
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.Dns
@@ -67,12 +70,23 @@ object ResilientDns : Dns {
   private val dohClient by lazy {
     OkHttpClient.Builder()
       .dns(Dns.SYSTEM)
-      .connectTimeout(5, TimeUnit.SECONDS)
-      .readTimeout(5, TimeUnit.SECONDS)
+      .connectTimeout(4, TimeUnit.SECONDS)
+      .readTimeout(4, TimeUnit.SECONDS)
       .build()
   }
 
   private val cache = ConcurrentHashMap<String, Pair<List<InetAddress>, Long>>()
+
+  private fun isStreamingHost(hostname: String): Boolean {
+    val h = hostname.lowercase()
+    return h.contains("streamingcommunity") ||
+      h.contains("vixcloud") ||
+      h.contains("vix-content") ||
+      h.contains("solargecko") ||
+      h.endsWith(".boats") ||
+      h.endsWith(".build") ||
+      h.endsWith(".cc")
+  }
 
   override fun lookup(hostname: String): List<InetAddress> {
     val cached = cache[hostname]
@@ -80,26 +94,38 @@ object ResilientDns : Dns {
       return cached.first
     }
 
+    // For known streaming/CDN domains blocked or filtered by Italian ISPs or OEM DNS,
+    // query DoH directly without waiting on multi-second system DNS timeouts.
+    if (isStreamingHost(hostname)) {
+      val doh = queryDoh(hostname)
+      if (doh != null && doh.isNotEmpty()) {
+        cache[hostname] = doh to (System.currentTimeMillis() + 3_600_000L)
+        return doh
+      }
+    }
+
     try {
       val systemAddrs = Dns.SYSTEM.lookup(hostname)
       if (systemAddrs.isNotEmpty()) {
-        cache[hostname] = systemAddrs to (System.currentTimeMillis() + 600_000L)
+        cache[hostname] = systemAddrs to (System.currentTimeMillis() + 3_600_000L)
         return systemAddrs
       }
     } catch (_: Exception) {}
 
-    val dohAddrs = queryDoh("https://1.1.1.1/dns-query?name=$hostname&type=A")
-      ?: queryDoh("https://8.8.8.8/resolve?name=$hostname&type=A")
-
+    val dohAddrs = queryDoh(hostname)
     if (dohAddrs != null && dohAddrs.isNotEmpty()) {
-      cache[hostname] = dohAddrs to (System.currentTimeMillis() + 600_000L)
+      cache[hostname] = dohAddrs to (System.currentTimeMillis() + 3_600_000L)
       return dohAddrs
     }
 
     throw UnknownHostException("ResilientDns: unable to resolve $hostname")
   }
 
-  private fun queryDoh(url: String): List<InetAddress>? = runCatching {
+  private fun queryDoh(hostname: String): List<InetAddress>? =
+    queryDohUrl("https://1.1.1.1/dns-query?name=$hostname&type=A")
+      ?: queryDohUrl("https://8.8.8.8/resolve?name=$hostname&type=A")
+
+  private fun queryDohUrl(url: String): List<InetAddress>? = runCatching {
     val req = Request.Builder()
       .url(url)
       .header("Accept", "application/dns-json")
@@ -127,6 +153,8 @@ object ResilientDns : Dns {
 object Net {
   private val sharedCookieJar = SharedCookieJar()
 
+  @Volatile private var cachedImageClient: OkHttpClient? = null
+
   val client: OkHttpClient =
     OkHttpClient.Builder()
       .dns(ResilientDns)
@@ -137,6 +165,18 @@ object Net {
       .followRedirects(true)
       .followSslRedirects(true)
       .build()
+
+  /** Dedicated OkHttp client with a 200MB persistent disk cache for posters & covers. */
+  fun imageClient(context: Context): OkHttpClient =
+    cachedImageClient ?: synchronized(this) {
+      cachedImageClient ?: run {
+        val cacheDir = File(context.cacheDir, "image_cache")
+        client.newBuilder()
+          .cache(Cache(cacheDir, 200L * 1024 * 1024))
+          .build()
+          .also { cachedImageClient = it }
+      }
+    }
 
   /** Same as [client] but does not auto-follow redirects, for hosts that hand back the final link via `Location`. */
   val noRedirectClient: OkHttpClient = client.newBuilder().followRedirects(false).followSslRedirects(false).build()

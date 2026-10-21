@@ -10,6 +10,7 @@ import com.s4me.tv.engine.SiteTraffic
 import com.s4me.tv.engine.StreamItem
 import com.s4me.tv.engine.download.HlsMkvDownloader
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -85,18 +86,35 @@ class DetailViewModel(private val item: StreamItem) : ViewModel() {
         _uiState.value = DetailUiState.Error("Canale non trovato")
         return@launch
       }
-      val enriched = runCatching { channel.detail(item) }.getOrDefault(item)
+
+      // Concurrently resolve playback streams and enrich metadata (Inertia + IMDb/TMDB).
+      // Streams only depend on item.url/kind, so finding videos doesn't wait on slow external scrapers!
+      val videosDeferred = async { runCatching { channel.findVideos(item) } }
+      val detailDeferred = async { runCatching { channel.detail(item) }.getOrDefault(item) }
+
+      launch {
+        videosDeferred.await()
+          .onSuccess { sources ->
+            if (sources.isEmpty()) {
+              _uiState.value = DetailUiState.Error("Nessuna fonte trovata per questo contenuto")
+              return@onSuccess
+            }
+            val current = _preview.value
+            _uiState.value = DetailUiState.Success(current, sources)
+            sources.firstOrNull { it.serverId == "hls" }?.let { source -> launch { _tracks.value = readAvailableTracks(source) } }
+          }
+          .onFailure { _uiState.value = DetailUiState.Error(it.message ?: "Errore di caricamento") }
+      }
+
+      val enriched = detailDeferred.await()
       _preview.value = enriched
       launch { _related.value = runCatching { channel.collection(enriched) }.getOrDefault(emptyList()) }
       launch { _similar.value = withContext(SiteTraffic.Background) { runCatching { similarTo(channel, enriched) }.getOrDefault(emptyList()) } }
-      runCatching { channel.findVideos(enriched) }
-        .onSuccess { sources ->
-          _uiState.value =
-            if (sources.isEmpty()) DetailUiState.Error("Nessuna fonte trovata per questo contenuto")
-            else DetailUiState.Success(enriched, sources)
-          sources.firstOrNull { it.serverId == "hls" }?.let { source -> launch { _tracks.value = readAvailableTracks(source) } }
-        }
-        .onFailure { _uiState.value = DetailUiState.Error(it.message ?: "Errore di caricamento") }
+
+      val current = _uiState.value
+      if (current is DetailUiState.Success) {
+        _uiState.value = DetailUiState.Success(enriched, current.sources)
+      }
     }
   }
 }

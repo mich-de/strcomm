@@ -7,6 +7,7 @@ import com.s4me.tv.engine.Net
 import com.s4me.tv.engine.StreamItem
 import com.s4me.tv.engine.download.HlsMkvDownloader
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -58,21 +59,28 @@ class DetailViewModel(private val item: StreamItem) : ViewModel() {
         _uiState.value = DetailUiState.Error("Canale non trovato")
         return@launch
       }
-      val enriched = runCatching { channel.detail(item) }.getOrDefault(item)
-      launch { _related.value = runCatching { channel.collection(enriched) }.getOrDefault(emptyList()) }
-      // Resolve from the enriched item, not the raw nav-arg one, so findVideos() has the full
-      // genres/cast/director/runtime/tmdbId/imdbId to carry onto the PLAYABLE item for the player's
-      // info overlay — resolution itself only reads url/kind, both untouched by detail().
-      runCatching { channel.findVideos(enriched) }
-        .onSuccess { sources ->
-          if (sources.isEmpty()) {
-            _uiState.value = DetailUiState.Error("Nessuna fonte trovata per questo contenuto")
-            return@onSuccess
+      val videosDeferred = async { runCatching { channel.findVideos(item) } }
+      val detailDeferred = async { runCatching { channel.detail(item) }.getOrDefault(item) }
+
+      launch {
+        videosDeferred.await()
+          .onSuccess { sources ->
+            if (sources.isEmpty()) {
+              _uiState.value = DetailUiState.Error("Nessuna fonte trovata per questo contenuto")
+              return@onSuccess
+            }
+            _uiState.value = DetailUiState.Success(item, sources)
+            sources.firstOrNull { it.serverId == "hls" }?.let { source -> launch { _tracks.value = readAvailableTracks(source) } }
           }
-          _uiState.value = DetailUiState.Success(enriched, sources)
-          sources.firstOrNull { it.serverId == "hls" }?.let { source -> launch { _tracks.value = readAvailableTracks(source) } }
-        }
-        .onFailure { _uiState.value = DetailUiState.Error(it.message ?: "Errore di caricamento") }
+          .onFailure { _uiState.value = DetailUiState.Error(it.message ?: "Errore di caricamento") }
+      }
+
+      val enriched = detailDeferred.await()
+      launch { _related.value = runCatching { channel.collection(enriched) }.getOrDefault(emptyList()) }
+      val current = _uiState.value
+      if (current is DetailUiState.Success) {
+        _uiState.value = DetailUiState.Success(enriched, current.sources)
+      }
     }
   }
 }

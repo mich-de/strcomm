@@ -62,6 +62,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.ui.PlayerView
@@ -299,7 +300,17 @@ private fun NativeHlsPlayer(
           .setUserAgent(DESKTOP_UA)
           .setDefaultRequestProperties(mapOf("Referer" to (item.referer ?: "https://vixcloud.cc/")))
       val mediaSource = HlsMediaSource.Factory(dataSourceFactory).createMediaSource(MediaItem.fromUri(item.url))
-      ExoPlayer.Builder(context).build().apply {
+      val loadControl =
+        DefaultLoadControl.Builder()
+          .setBufferDurationsMs(
+            /* minBufferMs = */ 15_000,
+            /* maxBufferMs = */ 50_000,
+            /* bufferForPlaybackMs = */ 1_000,
+            /* bufferForPlaybackAfterRebufferMs = */ 2_000,
+          )
+          .setPrioritizeTimeOverSizeThresholds(true)
+          .build()
+      ExoPlayer.Builder(context).setLoadControl(loadControl).build().apply {
         // Italian audio + Italian subtitles as the language preference (mirrors :client); the
         // forced-subtitle auto-pick below then narrows the subtitle choice to a forced track when
         // one exists — subtitles otherwise default off (see TracksMenu's "Disattivati").

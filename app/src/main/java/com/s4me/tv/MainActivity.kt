@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
     SingletonImageLoader.setSafe { context ->
       ImageLoader.Builder(context)
         .components {
-          add(OkHttpNetworkFetcherFactory(callFactory = { Net.client }, connectivityChecker = { ConnectivityChecker.ONLINE }))
+          add(OkHttpNetworkFetcherFactory(callFactory = { Net.imageClient(context) }, connectivityChecker = { ConnectivityChecker.ONLINE }))
         }
         .allowHardware(!Build.MANUFACTURER.equals("Amazon", ignoreCase = true))
         .eventListener(
