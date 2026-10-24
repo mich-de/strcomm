@@ -93,9 +93,13 @@ def check_catalogue_domain(current_host: str) -> tuple[str, bool]:
     changed = (working_host != current_host.rstrip("/"))
     return working_host, changed
 
-def check_video_sources(host: str) -> tuple[bool, str]:
+def check_video_sources(host: str) -> tuple[bool, str, bool]:
+    """Returns (ok, message, soft). soft=True means every failure was a CDN 403 on
+    the playlist after catalogue, embed and token all resolved."""
     sample_slugs = ["66299-animals", "1484-9-1-1?episode_id=13597&next_episode=1"]
     last_err = "No sample title checked"
+    soft_403 = False
+    hard_fail = False
 
     for slug in sample_slugs:
         iframe_url = f"{host}/it/iframe/{slug}"
@@ -103,11 +107,13 @@ def check_video_sources(host: str) -> tuple[bool, str]:
         status, _, html_iframe = http_get(iframe_url, referer=host)
         if status != 200 or not html_iframe:
             last_err = f"Iframe {iframe_url} returned HTTP {status}"
+            hard_fail = True
             continue
 
         m_embed = re.search(r'src=["\'](https://[^"\']+embed[^"\']+)["\']', html_iframe)
         if not m_embed:
             last_err = f"No embed URL found in iframe {iframe_url}"
+            hard_fail = True
             continue
 
         embed_url = html.unescape(m_embed.group(1))
@@ -116,6 +122,7 @@ def check_video_sources(host: str) -> tuple[bool, str]:
         status, _, html_embed = http_get(embed_url, referer=host)
         if status != 200 or not html_embed:
             last_err = f"Embed {embed_url} returned HTTP {status}"
+            hard_fail = True
             continue
 
         m_token = re.search(r"['\"]token['\"]\s*:\s*['\"]([^'\"]+)['\"]", html_embed)
@@ -124,6 +131,7 @@ def check_video_sources(host: str) -> tuple[bool, str]:
 
         if not (m_token and m_expires and m_url):
             last_err = f"Failed to extract masterPlaylist parameters from embed {embed_url}"
+            hard_fail = True
             continue
 
         token = m_token.group(1)
@@ -135,14 +143,24 @@ def check_video_sources(host: str) -> tuple[bool, str]:
 
         embed_origin = re.search(r"(https://[^/]+)", embed_url).group(1)
         status, _, hls_text = http_get(playlist_url, referer=f"{embed_origin}/")
+        if status == 403:
+            # The CDN intermittently refuses GitHub's datacenter runners (only the
+            # 03:00/11:00 UTC runs, 21–24 Oct 2026, issues #1–#7) while the same
+            # playlist plays fine from a home connection. Catalogue + embed + token
+            # already resolved, so this is not evidence the app is broken: report it
+            # as a soft failure instead of failing the run and opening an issue.
+            last_err = f"Playlist HTTP 403 from the CI runner (CDN refuses datacenter IPs)"
+            soft_403 = True
+            continue
         if status != 200 or "#EXTM3U" not in hls_text:
             last_err = f"Playlist fetch failed or not HLS (#EXTM3U missing), HTTP {status}"
+            hard_fail = True
             continue
 
         print("HLS master playlist verified successfully!")
-        return True, "OK"
+        return True, "OK", False
 
-    return False, last_err
+    return False, last_err, soft_403 and not hard_fail
 
 def apply_domain_update(old_host: str, new_host: str, new_vname: str, new_vcode: int):
     print(f"Updating domain in files from {old_host} to {new_host} (Version {new_vname} / {new_vcode})...")
@@ -183,7 +201,11 @@ def main():
         set_github_output("error_message", "Catalogue site unreachable on all seeds")
         sys.exit(1)
 
-    sources_ok, sources_msg = check_video_sources(live_host)
+    sources_ok, sources_msg, soft = check_video_sources(live_host)
+    if not sources_ok and soft:
+        # Annotation on the run, but no failed run, no alert issue, no email.
+        print(f"::warning title=Playlist bloccata dal CDN::{sources_msg}")
+        sources_ok = True
     if not sources_ok:
         print(f"ERROR: Video sources check failed: {sources_msg}")
         set_github_output("needs_update", "false")

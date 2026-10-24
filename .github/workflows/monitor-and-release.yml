@@ -43,13 +43,32 @@ jobs:
         with:
           script: |
             const errorMsg = "${{ steps.health_check.outputs.error_message || 'Controllo fonti o catalogo fallito' }}";
-            await github.rest.issues.create({
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            // One open alert at a time: a recurring failure adds a comment to it
+            // instead of opening a new issue every 6 hours (#1–#7 were duplicates).
+            const { data: open } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `[Alert] Fallito controllo streaming / fonti (${new Date().toISOString().slice(0, 10)})`,
-              body: `⚠️ **Attenzione:** Il controllo automatico delle fonti video o del catalogo ha riscontrato un problema:\n\n> ${errorMsg}\n\nVerificare lo stato di StreamingCommunity e del provider video (vixcloud).`,
-              labels: ['alert', 'stream-health']
+              state: 'open',
+              labels: 'stream-health',
+              per_page: 1,
             });
+            if (open.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: open[0].number,
+                body: `Di nuovo fallito (${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC): ${errorMsg}\n${run}`,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `[Alert] Fallito controllo streaming / fonti (${new Date().toISOString().slice(0, 10)})`,
+                body: `⚠️ **Attenzione:** Il controllo automatico delle fonti video o del catalogo ha riscontrato un problema:\n\n> ${errorMsg}\n\nVerificare lo stato di StreamingCommunity e del provider video (vixcloud).\n\n${run}`,
+                labels: ['alert', 'stream-health']
+              });
+            }
 
       - name: Setup JDK 17
         if: steps.health_check.outputs.needs_update == 'true' || inputs.force_build == true
