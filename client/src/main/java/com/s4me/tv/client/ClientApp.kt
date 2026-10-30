@@ -3,6 +3,8 @@ package com.s4me.tv.client
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -27,15 +29,20 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
@@ -59,12 +66,15 @@ import com.s4me.tv.client.nav.isWideScreen
 import com.s4me.tv.client.nav.navKeyFor
 import com.s4me.tv.client.ui.browse.BrowseScreen
 import com.s4me.tv.client.ui.components.LocalTopInset
+import com.s4me.tv.client.ui.components.StrCommSplash
 import com.s4me.tv.client.ui.components.StrCommWordmark
 import com.s4me.tv.client.ui.components.Symbol
 import com.s4me.tv.client.ui.detail.DetailScreen
 import com.s4me.tv.client.ui.downloads.DownloadsScreen
 import com.s4me.tv.client.ui.guide.TvGuideScreen
 import com.s4me.tv.client.ui.home.HomeScreen
+import com.s4me.tv.client.ui.home.HomeUiState
+import com.s4me.tv.client.ui.home.HomeViewModel
 import com.s4me.tv.client.ui.lists.CustomListDetailScreen
 import com.s4me.tv.client.ui.lists.CustomListsScreen
 import com.s4me.tv.client.ui.lists.MyListScreen
@@ -78,6 +88,7 @@ import com.s4me.tv.client.ui.settings.SettingsScreen
 import com.s4me.tv.engine.ChannelRegistry
 import com.s4me.tv.engine.ItemKind
 import com.s4me.tv.engine.ProfileScope
+import kotlinx.coroutines.delay
 
 /** A top-level tab: [icon] outlined, [selectedIcon] filled — Material 3's navigation pattern. */
 private data class TabDest(val label: String, @DrawableRes val icon: Int, @DrawableRes val selectedIcon: Int, val root: NavKey)
@@ -165,133 +176,153 @@ fun ClientApp() {
   val edgeToTop = !wide && !fullBleed && (last is Home || last is Detail || (last is Browse && last.item.kind == ItemKind.SERIES))
   val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
-  Scaffold(
-    topBar = { if (wide && !fullBleed) WideTopBar(selectedTab = selectedTab, onSelect = { openTab(it) }) },
-    bottomBar = {
-      if (!wide && !fullBleed) {
-        // Full-strength icon and label for the open tab, muted for the rest, no tonal pill: the default pill
-        // was the only coloured thing on the bar, and the filled icon already says which tab is open.
-        val tabColors =
-          NavigationBarItemDefaults.colors(
-            selectedIconColor = MaterialTheme.colorScheme.onBackground,
-            selectedTextColor = MaterialTheme.colorScheme.onBackground,
-            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            indicatorColor = Color.Transparent,
-          )
-        NavigationBar {
-          TABS.forEachIndexed { i, t ->
-            NavigationBarItem(
-              selected = selectedTab == i,
-              onClick = { openTab(i) },
-              icon = { Symbol(if (selectedTab == i) t.selectedIcon else t.icon) },
-              label = { Text(t.label) },
-              colors = tabColors,
+  // Launch splash over everything until Home's first load settles (content or error), and for at
+  // least 900 ms so a fast load from cache doesn't just flash it. Same HomeViewModel instance as
+  // HomeScreen's (no per-entry ViewModel store, so both resolve to the activity's). Once dismissed
+  // it stays dismissed: a pull-to-refresh or a rotation never brings it back.
+  val homeState by viewModel<HomeViewModel>().uiState.collectAsStateWithLifecycle()
+  var splashDone by rememberSaveable { mutableStateOf(false) }
+  var splashMinShown by remember { mutableStateOf(false) }
+  LaunchedEffect(Unit) {
+    delay(900)
+    splashMinShown = true
+  }
+  LaunchedEffect(homeState, splashMinShown) {
+    if (splashMinShown && homeState !is HomeUiState.Loading) splashDone = true
+  }
+
+  Box(Modifier.fillMaxSize()) {
+    Scaffold(
+      topBar = { if (wide && !fullBleed) WideTopBar(selectedTab = selectedTab, onSelect = { openTab(it) }) },
+      bottomBar = {
+        if (!wide && !fullBleed) {
+          // Full-strength icon and label for the open tab, muted for the rest, no tonal pill: the default pill
+          // was the only coloured thing on the bar, and the filled icon already says which tab is open.
+          val tabColors =
+            NavigationBarItemDefaults.colors(
+              selectedIconColor = MaterialTheme.colorScheme.onBackground,
+              selectedTextColor = MaterialTheme.colorScheme.onBackground,
+              unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+              unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+              indicatorColor = Color.Transparent,
             )
+          NavigationBar {
+            TABS.forEachIndexed { i, t ->
+              NavigationBarItem(
+                selected = selectedTab == i,
+                onClick = { openTab(i) },
+                icon = { Symbol(if (selectedTab == i) t.selectedIcon else t.icon) },
+                label = { Text(t.label) },
+                colors = tabColors,
+              )
+            }
           }
         }
       }
-    }
-  ) { padding ->
-    val contentPadding =
-      when {
-        fullBleed -> Modifier
-        // Bottom only: the screen draws up under the status bar and pads itself by LocalTopInset.
-        edgeToTop -> Modifier.padding(bottom = padding.calculateBottomPadding())
-        else -> Modifier.padding(padding)
-      }
-    CompositionLocalProvider(LocalTopInset provides (if (edgeToTop) statusTop else 0.dp)) {
-      Row(modifier = Modifier.fillMaxSize().then(contentPadding)) {
-        NavDisplay(
-          backStack = backStack,
-          modifier = Modifier.fillMaxSize(),
-          onBack = { back() },
-          transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
-          popTransitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(140)) },
-          predictivePopTransitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(140)) },
-          entryProvider =
-            entryProvider {
-              entry<Home> {
-                HomeScreen(
-                  onOpen = open,
-                  onOpenMyList = { backStack.add(MyList) },
-                  onOpenBrowse = { extra -> catalogRoot?.let { backStack.add(Browse(it.copy(extra = extra))) } },
-                  modifier = Modifier.fillMaxSize(),
-                  onOpenSearch = { openTab(2) },
-                  onOpenProfile = { openTab(3) },
-                )
-              }
-              entry<Search> { key ->
-                SearchScreen(
-                  onOpen = open,
-                  // Same deep link Home's genre chips use: the catalogue filtered by that genre id.
-                  onOpenGenre = { id -> catalogRoot?.let { backStack.add(Browse(it.copy(extra = "genre=$id"))) } },
-                  initialQuery = key.initialQuery,
-                  isPersonQuery = key.isPersonQuery,
-                  modifier = Modifier.fillMaxSize(),
-                )
-              }
-              entry<BrowseRoot> {
-                if (catalogRoot != null) {
-                  BrowseScreen(root = catalogRoot, onOpen = open, onBack = back, modifier = Modifier.fillMaxSize())
-                } else {
-                  Box(Modifier.fillMaxSize())
+    ) { padding ->
+      val contentPadding =
+        when {
+          fullBleed -> Modifier
+          // Bottom only: the screen draws up under the status bar and pads itself by LocalTopInset.
+          edgeToTop -> Modifier.padding(bottom = padding.calculateBottomPadding())
+          else -> Modifier.padding(padding)
+        }
+      CompositionLocalProvider(LocalTopInset provides (if (edgeToTop) statusTop else 0.dp)) {
+        Row(modifier = Modifier.fillMaxSize().then(contentPadding)) {
+          NavDisplay(
+            backStack = backStack,
+            modifier = Modifier.fillMaxSize(),
+            onBack = { back() },
+            transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
+            popTransitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(140)) },
+            predictivePopTransitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(140)) },
+            entryProvider =
+              entryProvider {
+                entry<Home> {
+                  HomeScreen(
+                    onOpen = open,
+                    onOpenMyList = { backStack.add(MyList) },
+                    onOpenBrowse = { extra -> catalogRoot?.let { backStack.add(Browse(it.copy(extra = extra))) } },
+                    modifier = Modifier.fillMaxSize(),
+                    onOpenSearch = { openTab(2) },
+                    onOpenProfile = { openTab(3) },
+                  )
                 }
-              }
-              entry<Settings> {
-                SettingsScreen(
-                  onOpenTvGuide = { backStack.add(TvGuide) },
-                  onOpenCustomLists = { backStack.add(CustomLists) },
-                  onOpenDownloads = { backStack.add(MyDownloads) },
-                  onOpenProfiles = { backStack.add(Profiles) },
-                  modifier = Modifier.fillMaxSize(),
-                )
-              }
-              entry<Profiles> {
-                val before = remember { ProfileScope.currentId(context) }
-                ProfilesScreen(
-                  onPicked = { id -> if (id == before) back() else activity?.let { restartApp(it) } },
-                  onBack = back,
-                  modifier = Modifier.fillMaxSize(),
-                )
-              }
-              entry<News> { NewHotScreen(onOpen = open, modifier = Modifier.fillMaxSize()) }
-              entry<Me> {
-                MeScreen(
-                  onOpen = open,
-                  onOpenProfiles = { backStack.add(Profiles) },
-                  onOpenMyList = { backStack.add(MyList) },
-                  onOpenDownloads = { backStack.add(MyDownloads) },
-                  onOpenLists = { backStack.add(CustomLists) },
-                  onOpenGuide = { backStack.add(TvGuide) },
-                  onOpenSettings = { backStack.add(Settings) },
-                  modifier = Modifier.fillMaxSize(),
-                )
-              }
-              entry<MyList> { MyListScreen(onOpen = open, onBack = back, modifier = Modifier.fillMaxSize()) }
-              entry<MyDownloads> { DownloadsScreen(onPlay = { backStack.add(Player(it)) }, onBack = back, modifier = Modifier.fillMaxSize()) }
-              entry<TvGuide> { TvGuideScreen(onOpen = open, onBack = back, modifier = Modifier.fillMaxSize()) }
-              entry<CustomLists> {
-                CustomListsScreen(onOpenList = { id -> backStack.add(CustomListDetail(id)) }, onBack = back, modifier = Modifier.fillMaxSize())
-              }
-              entry<CustomListDetail> { key ->
-                CustomListDetailScreen(listId = key.listId, onOpen = open, onBack = back, modifier = Modifier.fillMaxSize())
-              }
-              entry<Browse> { key -> BrowseScreen(root = key.item, onOpen = open, onBack = back, modifier = Modifier.fillMaxSize()) }
-              entry<Detail> { key ->
-                DetailScreen(
-                  item = key.item,
-                  onOpen = open,
-                  onPlay = { backStack.add(Player(it)) },
-                  onPersonSearch = { name -> backStack.add(Search(initialQuery = name, isPersonQuery = true)) },
-                  onBack = back,
-                  modifier = Modifier.fillMaxSize(),
-                )
-              }
-              entry<Player> { key -> PlayerScreen(item = key.item, onBack = back, modifier = Modifier.fillMaxSize()) }
-            },
-        )
+                entry<Search> { key ->
+                  SearchScreen(
+                    onOpen = open,
+                    // Same deep link Home's genre chips use: the catalogue filtered by that genre id.
+                    onOpenGenre = { id -> catalogRoot?.let { backStack.add(Browse(it.copy(extra = "genre=$id"))) } },
+                    initialQuery = key.initialQuery,
+                    isPersonQuery = key.isPersonQuery,
+                    modifier = Modifier.fillMaxSize(),
+                  )
+                }
+                entry<BrowseRoot> {
+                  if (catalogRoot != null) {
+                    BrowseScreen(root = catalogRoot, onOpen = open, onBack = back, modifier = Modifier.fillMaxSize())
+                  } else {
+                    Box(Modifier.fillMaxSize())
+                  }
+                }
+                entry<Settings> {
+                  SettingsScreen(
+                    onOpenTvGuide = { backStack.add(TvGuide) },
+                    onOpenCustomLists = { backStack.add(CustomLists) },
+                    onOpenDownloads = { backStack.add(MyDownloads) },
+                    onOpenProfiles = { backStack.add(Profiles) },
+                    modifier = Modifier.fillMaxSize(),
+                  )
+                }
+                entry<Profiles> {
+                  val before = remember { ProfileScope.currentId(context) }
+                  ProfilesScreen(
+                    onPicked = { id -> if (id == before) back() else activity?.let { restartApp(it) } },
+                    onBack = back,
+                    modifier = Modifier.fillMaxSize(),
+                  )
+                }
+                entry<News> { NewHotScreen(onOpen = open, modifier = Modifier.fillMaxSize()) }
+                entry<Me> {
+                  MeScreen(
+                    onOpen = open,
+                    onOpenProfiles = { backStack.add(Profiles) },
+                    onOpenMyList = { backStack.add(MyList) },
+                    onOpenDownloads = { backStack.add(MyDownloads) },
+                    onOpenLists = { backStack.add(CustomLists) },
+                    onOpenGuide = { backStack.add(TvGuide) },
+                    onOpenSettings = { backStack.add(Settings) },
+                    modifier = Modifier.fillMaxSize(),
+                  )
+                }
+                entry<MyList> { MyListScreen(onOpen = open, onBack = back, modifier = Modifier.fillMaxSize()) }
+                entry<MyDownloads> { DownloadsScreen(onPlay = { backStack.add(Player(it)) }, onBack = back, modifier = Modifier.fillMaxSize()) }
+                entry<TvGuide> { TvGuideScreen(onOpen = open, onBack = back, modifier = Modifier.fillMaxSize()) }
+                entry<CustomLists> {
+                  CustomListsScreen(onOpenList = { id -> backStack.add(CustomListDetail(id)) }, onBack = back, modifier = Modifier.fillMaxSize())
+                }
+                entry<CustomListDetail> { key ->
+                  CustomListDetailScreen(listId = key.listId, onOpen = open, onBack = back, modifier = Modifier.fillMaxSize())
+                }
+                entry<Browse> { key -> BrowseScreen(root = key.item, onOpen = open, onBack = back, modifier = Modifier.fillMaxSize()) }
+                entry<Detail> { key ->
+                  DetailScreen(
+                    item = key.item,
+                    onOpen = open,
+                    onPlay = { backStack.add(Player(it)) },
+                    onPersonSearch = { name -> backStack.add(Search(initialQuery = name, isPersonQuery = true)) },
+                    onBack = back,
+                    modifier = Modifier.fillMaxSize(),
+                  )
+                }
+                entry<Player> { key -> PlayerScreen(item = key.item, onBack = back, modifier = Modifier.fillMaxSize()) }
+              },
+          )
+        }
       }
+    }
+    AnimatedVisibility(visible = !splashDone, enter = EnterTransition.None, exit = fadeOut(tween(450))) {
+      StrCommSplash()
     }
   }
 }
