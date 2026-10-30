@@ -1,0 +1,55 @@
+name: Client preview APK
+
+# A signed :client build for trying a change on the phone before it goes to main. Runs only on
+# preview/** branches; the APK lands in a DRAFT release (invisible to the public and to the in-app
+# updater, which reads releases/latest), to be downloaded and then deleted.
+on:
+  push:
+    branches: ['preview/**']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+
+      - name: Restore keystore
+        run: |
+          mkdir -p keystore
+          echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > keystore/strcomm-release.jks
+          echo "${{ secrets.KEYSTORE_PROPERTIES }}" > keystore.properties
+
+      - name: Build :client release
+        run: |
+          chmod +x gradlew
+          set -o pipefail
+          ./gradlew :client:assembleRelease --no-daemon 2>&1 | tee build.log
+
+      # Compiler errors as one run annotation, readable through the API without the raw log.
+      - name: Report build errors
+        if: failure()
+        run: |
+          msg=$(grep -E '^e: |What went wrong|^> ' build.log | head -40 | sed -e 's/%/%25/g' -e 's/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
+          echo "::error title=Build fallita::${msg:-nessun errore riconosciuto nel log}"
+
+      - name: Upload to a draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHORT="${GITHUB_SHA::7}"
+          APK="StrComm-Mobile-Tablet-preview-${SHORT}.apk"
+          cp client/build/outputs/apk/release/client-release.apk "$APK"
+          gh release create "preview-${SHORT}" "$APK" --draft --target "$GITHUB_SHA" \
+            --title "Preview ${SHORT}" --notes "Build di prova, non pubblicata."
