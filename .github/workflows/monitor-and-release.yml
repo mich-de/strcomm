@@ -80,6 +80,11 @@ jobs:
       - name: Setup Android SDK
         if: steps.health_check.outputs.needs_update == 'true' || inputs.force_build == true
         uses: android-actions/setup-android@v3
+        with:
+          # The default "tools platform-tools" fails on current runners: the
+          # cmdline-tools sdkmanager no longer knows the legacy 'tools' package.
+          # AGP downloads the compileSdk platform and build-tools on its own.
+          packages: 'platform-tools'
 
       - name: Restore Keystore & Configuration
         if: steps.health_check.outputs.needs_update == 'true' || inputs.force_build == true
