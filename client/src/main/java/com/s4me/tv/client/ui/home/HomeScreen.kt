@@ -14,9 +14,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -120,7 +123,19 @@ fun HomeScreen(
       val pageBackground =
         if (dark) Brush.verticalGradient(0f to tint, 0.5f to lerp(tint, Color.Black, 0.7f), 1f to Color.Black)
         else Brush.verticalGradient(listOf(MaterialTheme.colorScheme.background, MaterialTheme.colorScheme.background))
-      Box(modifier = modifier.background(pageBackground)) {
+      // Pinned type pills: once the in-list row starts sliding under the status bar, a copy of it
+      // stays at the top of the page, so Tutto il catalogo / Film / Serie TV are always one tap away
+      // ("si spostano insieme nello scrolling per essere sempre trovabili").
+      val pillsPinned by remember {
+        derivedStateOf {
+          val pills = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == PILLS_KEY }
+          if (pills != null) pills.offset < 0 else listState.firstVisibleItemIndex > 0
+        }
+      }
+      BoxWithConstraints(modifier = modifier.background(pageBackground)) {
+        // The phone billboard is sized so its buttons are on the first screen, under the header and
+        // the pills ("i tasti apri + mia lista più in alto"): the 2:3 poster stays whole, just smaller.
+        val posterMaxHeight = (maxHeight - topInset - BILLBOARD_CHROME).coerceAtLeast(300.dp)
         LazyColumn(
           state = listState,
           modifier = Modifier.fillMaxSize(),
@@ -131,9 +146,9 @@ fun HomeScreen(
           // billboard as a card — the phone layout of the reference. A wide screen's top bar already
           // carries the app's mark and the tabs.
           if (!wide) item { HomeHeader(onOpenSearch = onOpenSearch, onOpenProfile = onOpenProfile) }
-          item { TypeFilterRow(docGenreId = docGenreId, onOpenBrowse = onOpenBrowse, modifier = Modifier.fillMaxWidth().padding(top = if (wide) 8.dp else 0.dp)) }
+          item(key = PILLS_KEY) { TypeFilterRow(docGenreId = docGenreId, onOpenBrowse = onOpenBrowse, modifier = Modifier.fillMaxWidth().padding(top = if (wide) 8.dp else 0.dp)) }
           if (s.heroes.isNotEmpty()) {
-            item { HeroPager(heroes = s.heroes, wide = wide, onOpen = onOpen, onCurrent = { currentHero = it }) }
+            item { HeroPager(heroes = s.heroes, wide = wide, posterMaxHeight = posterMaxHeight, onOpen = onOpen, onCurrent = { currentHero = it }) }
           }
           if (genres.isNotEmpty()) {
             item { GenreChips(genres = genres, onOpenGenre = { id -> onOpenBrowse("genre=$id") }) }
@@ -150,6 +165,16 @@ fun HomeScreen(
           }
         }
         StatusBarScrim(scrimProgress)
+        if (pillsPinned) {
+          Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background.copy(alpha = 0.96f))) {
+            Spacer(Modifier.height(topInset))
+            TypeFilterRow(
+              docGenreId = docGenreId,
+              onOpenBrowse = onOpenBrowse,
+              modifier = Modifier.fillMaxWidth().padding(top = if (wide) 8.dp else 0.dp, bottom = 6.dp),
+            )
+          }
+        }
       }
     }
   }
@@ -173,6 +198,13 @@ fun HomeScreen(
     ItemActionsSheet(title = item.seriesTitle ?: item.contentTitle ?: item.title, actions = actions, onDismiss = { menu = null })
   }
 }
+
+private const val PILLS_KEY = "type-pills"
+
+// What the phone billboard shares the first screen with, besides the status bar: the "Per <profilo>"
+// header (~54 dp), the type pills (48 dp), the list's two 16 dp gaps, the strip under the poster with
+// genres and buttons (~108 dp) and a little air above the bottom bar.
+private val BILLBOARD_CHROME = 270.dp
 
 @Composable
 private fun HomeHeader(onOpenSearch: () -> Unit, onOpenProfile: () -> Unit) {
@@ -200,7 +232,7 @@ private fun heroArt(hero: StreamItem, wide: Boolean): String? =
   if (wide) hero.backdrop ?: hero.thumbnail else hero.thumbnail ?: hero.backdrop
 
 @Composable
-private fun HeroPager(heroes: List<StreamItem>, wide: Boolean, onOpen: (StreamItem) -> Unit, onCurrent: (StreamItem) -> Unit) {
+private fun HeroPager(heroes: List<StreamItem>, wide: Boolean, posterMaxHeight: Dp, onOpen: (StreamItem) -> Unit, onCurrent: (StreamItem) -> Unit) {
   val pagerState = rememberPagerState(pageCount = { heroes.size })
   val context = LocalContext.current
   val watchlistStore = remember { WatchlistStore(context) }
@@ -262,19 +294,22 @@ private fun HeroPager(heroes: List<StreamItem>, wide: Boolean, onOpen: (StreamIt
     if (!wide) {
       // Phone: the whole 2:3 poster, uncropped, with the genres and buttons in a strip UNDER it. A
       // shorter card cropped heads off the top and laid the buttons over the poster's own title
-      // ("ancora su mobile taglia sopra").
-      Column(modifier = cardModifier) {
-        AsyncImage(
-          model = heroArt(hero, wide = false),
-          contentDescription = hero.title,
-          contentScale = ContentScale.Crop,
-          modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
-        )
-        Column(
-          horizontalAlignment = Alignment.CenterHorizontally,
-          modifier = Modifier.fillMaxWidth().background(Color(0xFF141414)).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
-        ) {
-          actions()
+      // ("ancora su mobile taglia sopra"). Its width is capped so poster + strip fit the first screen
+      // — the buttons were below the fold, under the bottom bar ("i tasti più in alto").
+      Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+        Column(modifier = Modifier.widthIn(max = posterMaxHeight * (2f / 3f)).then(cardModifier)) {
+          AsyncImage(
+            model = heroArt(hero, wide = false),
+            contentDescription = hero.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
+          )
+          Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth().background(Color(0xFF141414)).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+          ) {
+            actions()
+          }
         }
       }
       return@HorizontalPager
