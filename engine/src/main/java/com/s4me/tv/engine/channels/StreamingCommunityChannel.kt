@@ -56,7 +56,7 @@ class StreamingCommunityChannel : Channel {
   override val displayName = "StreamingCommunity"
   override val category = ChannelCategory.MIXED
 
-  @Volatile private var host = "https://streamingcommunityz.build"
+  @Volatile private var host = "https://streamingcommunityz.day"
   @Volatile private var cdn = "https://cdn.streamingcommunityz.build/images/"
 
   /**
@@ -68,7 +68,7 @@ class StreamingCommunityChannel : Channel {
    */
   private val hostSeeds =
     listOf(
-      "https://streamingcommunityz.build",
+      "https://streamingcommunityz.day",
       "https://streamingcommunityz.shiksha",
       "https://streamingcommunityz.rip",
       "https://streamingcommunityz.taxi",
