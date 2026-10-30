@@ -3,8 +3,6 @@ package com.s4me.tv.client
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -29,7 +27,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -88,7 +85,6 @@ import com.s4me.tv.client.ui.settings.SettingsScreen
 import com.s4me.tv.engine.ChannelRegistry
 import com.s4me.tv.engine.ItemKind
 import com.s4me.tv.engine.ProfileScope
-import kotlinx.coroutines.delay
 
 /** A top-level tab: [icon] outlined, [selectedIcon] filled — Material 3's navigation pattern. */
 private data class TabDest(val label: String, @DrawableRes val icon: Int, @DrawableRes val selectedIcon: Int, val root: NavKey)
@@ -176,20 +172,12 @@ fun ClientApp() {
   val edgeToTop = !wide && !fullBleed && (last is Home || last is Detail || (last is Browse && last.item.kind == ItemKind.SERIES))
   val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
-  // Launch splash over everything until Home's first load settles (content or error), and for at
-  // least 900 ms so a fast load from cache doesn't just flash it. Same HomeViewModel instance as
-  // HomeScreen's (no per-entry ViewModel store, so both resolve to the activity's). Once dismissed
-  // it stays dismissed: a pull-to-refresh or a rotation never brings it back.
+  // Launch intro over everything until Home's first load settles (content or error); the splash
+  // plays its own timeline and calls back once it has dived into the app. Same HomeViewModel
+  // instance as HomeScreen's (no per-entry ViewModel store, so both resolve to the activity's).
+  // Once done it stays done: a pull-to-refresh or a rotation never brings it back.
   val homeState by viewModel<HomeViewModel>().uiState.collectAsStateWithLifecycle()
   var splashDone by rememberSaveable { mutableStateOf(false) }
-  var splashMinShown by remember { mutableStateOf(false) }
-  LaunchedEffect(Unit) {
-    delay(900)
-    splashMinShown = true
-  }
-  LaunchedEffect(homeState, splashMinShown) {
-    if (splashMinShown && homeState !is HomeUiState.Loading) splashDone = true
-  }
 
   Box(Modifier.fillMaxSize()) {
     Scaffold(
@@ -321,8 +309,6 @@ fun ClientApp() {
         }
       }
     }
-    AnimatedVisibility(visible = !splashDone, enter = EnterTransition.None, exit = fadeOut(tween(450))) {
-      StrCommSplash()
-    }
+    if (!splashDone) StrCommSplash(ready = homeState !is HomeUiState.Loading, onFinished = { splashDone = true })
   }
 }
