@@ -20,8 +20,8 @@ android {
     applicationId = "com.s4me.tv.remote"
     minSdk = 26
     targetSdk = 36
-    versionCode = 47
-    versionName = "1.0.46"
+    versionCode = 48
+    versionName = "1.0.47"
   }
 
   signingConfigs {
