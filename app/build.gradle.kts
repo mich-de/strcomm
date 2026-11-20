@@ -20,8 +20,8 @@ android {
         applicationId = "com.s4me.tv"
         minSdk = 23
         targetSdk = 36
-        versionCode = 63
-        versionName = "1.0.62"
+        versionCode = 64
+        versionName = "1.0.63"
     }
 
     signingConfigs {
