@@ -21,8 +21,8 @@ android {
     applicationId = "com.s4me.tv.client"
     minSdk = 26
     targetSdk = 36
-    versionCode = 76
-    versionName = "1.0.75"
+    versionCode = 77
+    versionName = "1.0.76"
     // Real phones and tablets only: x86/x86_64 are emulator ABIs. 32-bit ARM stays for older phones
     // (the S25 Edge, like every device this is used on, is arm64-only).
     ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
